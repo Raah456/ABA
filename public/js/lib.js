@@ -100,8 +100,8 @@ export async function attempt(fn, success) {
 
 // ---------- modal ----------
 // content: node(s). onSubmit(form) -> truthy closes. Returns close().
-export function modal(title, content, { onSubmit, submitLabel = 'Save', wide = false, danger = false } = {}) {
-  const close = () => { backdrop.remove(); document.removeEventListener('keydown', onKey); };
+export function modal(title, content, { onSubmit, onClose, submitLabel = 'Save', wide = false, danger = false } = {}) {
+  const close = () => { backdrop.remove(); document.removeEventListener('keydown', onKey); onClose?.(); };
   const onKey = (e) => { if (e.key === 'Escape') close(); };
   const error = h('div', { class: 'banner bad hidden' });
   const form = h('form', {
@@ -131,6 +131,19 @@ export function modal(title, content, { onSubmit, submitLabel = 'Save', wide = f
   document.addEventListener('keydown', onKey);
   form.querySelector('input:not([type=hidden]), select, textarea')?.focus();
   return close;
+}
+
+// In-page "are you sure?" step. Resolves true only if the person confirms.
+export function confirmDialog(message, { confirmLabel = 'Confirm', danger = true } = {}) {
+  return new Promise((resolve) => {
+    let confirmed = false;
+    modal('Are you sure?', h('p', {}, message), {
+      submitLabel: confirmLabel,
+      danger,
+      onSubmit: () => { confirmed = true; return true; },
+      onClose: () => resolve(confirmed),
+    });
+  });
 }
 
 // ---------- forms ----------

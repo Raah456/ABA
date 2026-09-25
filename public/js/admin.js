@@ -1,6 +1,6 @@
 import {
   h, mount, api, can, attempt, rerender, modal, field, input, textarea, select, formValues, fmtDate, fmtDateTime, fmtTime,
-  todayIso, shiftDate, badge, empty, table, usageBar, listOptions, loadUsers, toast, downloadCsv,
+  todayIso, shiftDate, badge, empty, table, usageBar, listOptions, loadUsers, toast, downloadCsv, confirmDialog,
 } from './lib.js';
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -149,7 +149,10 @@ export async function openRideForm(r) {
     field('Notes', input('notes', { value: r.notes, placeholder: 'Car seat, gate code, call on arrival…' })),
     r.id && h('button', {
       type: 'button', class: 'btn danger small',
-      onclick: async () => { if (confirm('Delete this ride?') && await attempt(() => api(`/rides/${r.id}`, { method: 'DELETE' }), 'Ride deleted')) { document.querySelector('.modal-backdrop')?.remove(); rerender(); } },
+      onclick: async () => {
+        if (!await confirmDialog('Delete this ride? This cannot be undone.', { confirmLabel: 'Delete ride' })) return;
+        if (await attempt(() => api(`/rides/${r.id}`, { method: 'DELETE' }), 'Ride deleted')) { document.querySelector('.modal-backdrop')?.remove(); rerender(); }
+      },
     }, 'Delete ride')),
   {
     onSubmit: async (form) => {
@@ -213,7 +216,7 @@ export async function transportView(el, _, query) {
         try {
           r = await api('/rides/copy', { method: 'POST', body: { from_date: from, to_date: day } });
         } catch (e) {
-          if (!/already has/.test(e.message) || !confirm(`${e.message}`)) throw e;
+          if (!/already has/.test(e.message) || !await confirmDialog(e.message, { confirmLabel: 'Copy anyway', danger: false })) throw e;
           r = await api('/rides/copy', { method: 'POST', body: { from_date: from, to_date: day, append: true } });
         }
         toast(`Copied ${r.copied} ride(s)`);

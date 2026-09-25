@@ -1,7 +1,7 @@
 import {
   state, h, mount, api, can, roleLabel, deptOfRole, attempt, rerender, modal, field, input, textarea, select, checkbox,
   formValues, fmtDate, fmtDateTime, fmtTime, age, todayIso, shiftDate, badge, empty, table, usageBar, lineChart,
-  listOptions, loadUsers, toast,
+  listOptions, loadUsers, toast, confirmDialog,
 } from './lib.js';
 import { openRideForm, rideStatusSelect, openPolicyForm, openCheckForm, openAuthForm } from './admin.js';
 import { openReportForm } from './comms.js';
@@ -268,7 +268,7 @@ export async function programView(el, [programId]) {
           { label: 'By', render: (d) => [d.recorded_by_name, d.note && h('div', { class: 'muted small' }, d.note)] },
           { label: '', render: (d) => sections.clinicalWrite && (d.recorded_by === mine || can('programs.manage')) && h('button', {
             class: 'btn small danger',
-            onclick: async (e) => { e.stopPropagation(); if (confirm('Remove this data point?') && await attempt(() => api(`/program-data/${d.id}`, { method: 'DELETE' }), 'Removed')) rerender(); },
+            onclick: async (e) => { e.stopPropagation(); if (await confirmDialog('Remove this data point from the graph?', { confirmLabel: 'Remove' }) && await attempt(() => api(`/program-data/${d.id}`, { method: 'DELETE' }), 'Removed')) rerender(); },
           }, 'Remove') },
         ], recent.slice(0, 50), { emptyText: 'No data recorded yet.' })))));
 }
