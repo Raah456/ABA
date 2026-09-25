@@ -1,0 +1,7 @@
+# Caddy gets and renews a free HTTPS certificate for $DOMAIN automatically,
+# redirects http:// to https://, and forwards requests to the app.
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy app:3000
+	header -Server
+}

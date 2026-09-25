@@ -26,11 +26,13 @@ function sha256(s) {
   return crypto.createHash('sha256').update(s).digest('hex');
 }
 
-function createSession(db, userId) {
+// needs2faSetup: the practice requires two-factor and this person hasn't set it up yet.
+// Such a session can only reach the setup screens.
+function createSession(db, userId, { needs2faSetup = false } = {}) {
   const token = crypto.randomBytes(32).toString('base64url');
   const now = Date.now();
-  db.prepare('INSERT INTO sessions (token_hash, user_id, created_at, last_seen) VALUES (?, ?, ?, ?)')
-    .run(sha256(token), userId, now, now);
+  db.prepare('INSERT INTO sessions (token_hash, user_id, created_at, last_seen, needs_2fa_setup) VALUES (?, ?, ?, ?, ?)')
+    .run(sha256(token), userId, now, now, needs2faSetup ? 1 : 0);
   return token;
 }
 
@@ -48,7 +50,7 @@ function readCookie(req, name) {
 }
 
 function setSessionCookie(req, res, token) {
-  const secure = req.secure || req.headers['x-forwarded-proto'] === 'https';
+  const secure = req.secure || !!req.app?.locals.production;
   res.setHeader('Set-Cookie',
     `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${MAX_AGE_MS / 1000}${secure ? '; Secure' : ''}`);
 }
@@ -63,7 +65,7 @@ function sessionMiddleware(db) {
     const token = readCookie(req, COOKIE);
     if (!token) return next();
     const row = db.prepare(`
-      SELECT s.token_hash, s.created_at, s.last_seen, u.id, u.email, u.name, u.role, u.active
+      SELECT s.token_hash, s.created_at, s.last_seen, s.needs_2fa_setup, u.id, u.email, u.name, u.role, u.active, u.totp_enabled
       FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?`).get(sha256(token));
     const now = Date.now();
     if (!row || !row.active || now - row.last_seen > IDLE_MS || now - row.created_at > MAX_AGE_MS) {
@@ -73,15 +75,18 @@ function sessionMiddleware(db) {
     }
     db.prepare('UPDATE sessions SET last_seen = ? WHERE token_hash = ?').run(now, row.token_hash);
     req.token = token;
-    req.user = { id: row.id, email: row.email, name: row.name, role: row.role, ...roleInfo(row.role) };
+    req.user = { id: row.id, email: row.email, name: row.name, role: row.role, ...roleInfo(row.role),
+      twoFactor: !!row.totp_enabled, needs2faSetup: !!row.needs_2fa_setup };
     next();
   };
 }
 
 class HttpError extends Error {
-  constructor(status, message) {
+  constructor(status, message, code) {
     super(message);
     this.status = status;
+    this.code = code;
+    this.expose = true;
   }
 }
 
@@ -100,6 +105,7 @@ function requireCap(...caps) {
 }
 
 module.exports = {
+  sha256,
   COOKIE,
   IDLE_MS,
   hashPassword,

@@ -338,3 +338,16 @@ details > summary { cursor: pointer; color: var(--accent); margin: 8px 0; }
   .page-head > .row { width: 100%; }
   h1 { font-size: 1.3rem; }
 }
+
+/* ---------- sign-in security ---------- */
+.code-input { font-size: 1.4rem !important; letter-spacing: 0.25em; text-align: center; font-variant-numeric: tabular-nums; }
+.qr-wrap { display: grid; place-items: center; padding: 12px; background: #fff; border-radius: 10px; border: 1px solid var(--border); }
+.qr { width: 200px; height: 200px; image-rendering: pixelated; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 1rem; letter-spacing: 0.05em; word-break: break-all; }
+.recovery-codes { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; columns: 2; column-gap: 24px; padding-left: 24px; margin: 0; }
+.recovery-codes li { padding: 2px 0; }
+.steps { padding-left: 20px; display: grid; gap: 6px; }
+.link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; }
+.center { text-align: center; }
+.login > div { width: min(420px, 100%); }
+.login .card { width: 100%; }

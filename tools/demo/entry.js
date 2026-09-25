@@ -8,8 +8,9 @@ import clinical from '../../src/routes/clinical.js';
 import admin from '../../src/routes/admin.js';
 import comms from '../../src/routes/comms.js';
 import profile from '../../src/routes/profile.js';
+import security from '../../src/routes/security.js';
 
-const STORE_KEY = 'aba-practice-demo-db-v2';
+const STORE_KEY = 'aba-practice-demo-db-v3';
 let db;
 let routers;
 let session;
@@ -42,11 +43,13 @@ const ready = (async () => {
     try { globalThis.__DB_BYTES = b64ToBytes(saved); db = openDb(':memory:'); } catch { db = null; }
   }
   if (!db) { globalThis.__DB_BYTES = null; db = openDb(':memory:'); seed(db); }
-  routers = [core, clients, clinical, admin, comms, profile].map((f) => f(db));
+  // Two-factor setup and backups need real cryptography and a server; the demo explains that.
+  const cfg = { browserDemo: true, production: false, key: null, backupDir: null, backupIntervalHours: 0 };
+  routers = [core, clients, clinical, admin, comms, profile, security].map((f) => f(db, cfg));
   session = sessionMiddleware(db);
 })();
 
-function handle(req) {
+async function handle(req) {
   const res = {
     statusCode: 200, body: null, sent: false,
     status(c) { this.statusCode = c; return this; },
@@ -62,7 +65,8 @@ function handle(req) {
   try {
     session(req, res, () => {});
     for (const r of routers) {
-      r.handle(req, res, (err) => { if (err) error = err; });
+      const pending = r.handle(req, res, (err) => { if (err) error = err; });
+      if (pending) await pending;
       if (error || res.sent) break;
     }
   } catch (e) { error = e; }
@@ -94,7 +98,7 @@ window.fetch = async (input, init = {}) => {
     ip: 'demo',
     secure: false,
   };
-  const res = handle(req);
+  const res = await handle(req);
   if (method !== 'GET' && res.statusCode < 400) save();
   return new Response(JSON.stringify(res.body), { status: res.statusCode, headers: { 'content-type': 'application/json' } });
 };

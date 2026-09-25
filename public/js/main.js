@@ -1,5 +1,5 @@
 import {
-  state, h, mount, api, can, roleLabel, attempt, loadLists, confirmDialog, fmtDate, fmtTime, ago, badge, empty,
+  state, h, mount, api, can, roleLabel, attempt, loadLists, confirmDialog, toast, fmtDate, fmtTime, ago, badge, empty,
   usageBar, field, input,
 } from './lib.js';
 import { clientsView, clientView, programView, notesView, noteView, newNoteView, templatesView, templateEditView } from './clinical.js';
@@ -7,6 +7,7 @@ import { insuranceView, transportView, billingView } from './admin.js';
 import { announcementsView, reportsView, reportView, openReportForm } from './comms.js';
 import { listsView, usersView, auditView, accountView } from './settings.js';
 import { icon, keepScreenOn, userDraftKeys, clearDraft } from './device.js';
+import { securityView, renderForcedSetup } from './security.js';
 
 const app = document.getElementById('app');
 let main;
@@ -31,6 +32,7 @@ const routes = [
   [/^\/settings\/lists$/, listsView],
   [/^\/settings\/users$/, usersView],
   [/^\/settings\/audit$/, auditView],
+  [/^\/settings\/security$/, securityView],
   [/^\/account$/, accountView],
 ];
 
@@ -146,7 +148,7 @@ function renderShell() {
       h('div', { class: 'nav-group' }, 'Communication'),
       navLink('/announcements', 'Announcements', 'announcements'),
       navLink('/reports', 'Reports & escalations', 'reports'),
-      clinical && h('div', { class: 'nav-group' }, 'Clinical'),
+      (can('clinical.write') || can('notes.approve') || can('templates.manage')) && h('div', { class: 'nav-group' }, 'Clinical'),
       can('clinical.write') || can('notes.approve') ? navLink('/notes', 'Session notes', 'notes') : null,
       can('templates.manage') && navLink('/templates', 'Note templates'),
       admin && h('div', { class: 'nav-group' }, 'Admin'),
@@ -158,6 +160,7 @@ function renderShell() {
       (state.lists?.editable.length > 0) && navLink('/settings/lists', 'Lists & categories'),
       can('users.manage') && navLink('/settings/users', 'Staff accounts'),
       can('audit.view') && navLink('/settings/audit', 'Audit log'),
+      can('security.manage') && navLink('/settings/security', 'Security & backups'),
       navLink('/account', 'My account')),
     h('div', { class: 'me-box' },
       h('div', {}, h('strong', {}, me.name)),
@@ -193,7 +196,8 @@ async function renderLogin(message) {
       e.preventDefault();
       err.classList.add('hidden');
       try {
-        await api('/login', { method: 'POST', body: { email: form.email.value, password: form.password.value } });
+        const r = await api('/login', { method: 'POST', body: { email: form.email.value, password: form.password.value } });
+        if (r.twoFactor) return renderCodeStep(r.challenge);
         await start();
       } catch (ex) {
         err.textContent = ex.message;
@@ -214,6 +218,50 @@ async function renderLogin(message) {
     demo.accounts.map((a) => h('div', {}, h('button', { type: 'button', onclick: () => { form.email.value = a.email; form.password.value = demo.password; } }, a.email), ` — ${a.label}`))) : null;
   mount(app, h('div', { class: 'login' }, h('div', { class: 'card' }, form, demoBox)));
   form.email.focus();
+}
+
+// Second sign-in step: the code from the authenticator app (or a recovery code).
+function renderCodeStep(challenge) {
+  const err = h('div', { class: 'banner bad hidden' });
+  let recovery = false;
+  const code = h('input', { name: 'code', type: 'text', inputmode: 'numeric', autocomplete: 'one-time-code', required: true, class: 'code-input', 'aria-label': 'Code' });
+  const label = h('span', {}, 'Code from your authenticator app');
+  const toggle = h('button', { type: 'button', class: 'link', onclick: () => {
+    recovery = !recovery;
+    label.textContent = recovery ? 'Recovery code (like abcd-efgh)' : 'Code from your authenticator app';
+    code.inputMode = recovery ? 'text' : 'numeric';
+    code.autocomplete = recovery ? 'off' : 'one-time-code';
+    toggle.textContent = recovery ? 'Use the code from my app' : 'Lost your phone? Use a recovery code';
+    code.value = '';
+    code.focus();
+  } }, 'Lost your phone? Use a recovery code');
+  const form = h('form', {
+    onsubmit: async (e) => {
+      e.preventDefault();
+      err.classList.add('hidden');
+      try {
+        const r = await api('/login/2fa', { method: 'POST', body: { challenge, code: code.value } });
+        if (r.usedRecoveryCode) setTimeout(() => toast(`Recovery code used. ${r.recoveryRemaining} left. Make new ones in My account.`), 500);
+        await start();
+      } catch (ex) {
+        if (ex.code === 'challenge_expired') return renderLogin(ex.message);
+        err.textContent = ex.message;
+        err.classList.remove('hidden');
+        code.select();
+      }
+      return undefined;
+    },
+  },
+  h('div', { class: 'brand' }, h('span', { class: 'brand-mark' }, 'AP'), 'ABA Practice Platform'),
+  h('h2', {}, 'Enter your code'),
+  h('p', { class: 'muted small' }, 'Open your authenticator app and type the 6-digit code for ABA Practice.'),
+  err,
+  h('label', { class: 'field' }, label, code),
+  h('button', { class: 'btn primary', type: 'submit' }, 'Sign in'),
+  h('p', { class: 'small' }, toggle),
+  h('p', { class: 'small' }, h('button', { type: 'button', class: 'link', onclick: () => renderLogin() }, 'Start over')));
+  mount(app, h('div', { class: 'login' }, h('div', { class: 'card' }, form)));
+  code.focus();
 }
 
 // ---------- dashboard ----------
@@ -241,6 +289,8 @@ async function dashboardView(el) {
   if (d.ridesToday) stats.push(['#/transport', d.ridesToday.reduce((a, r) => a + (r.status === 'cancelled' ? 0 : r.n), 0), 'Rides today']);
 
   const cards = [];
+  const backupWarning = d.backup && (d.backup.lastError || d.backup.overdue) && h('div', { class: 'banner bad' },
+    d.backup.lastError ? `Backups are failing: ${d.backup.lastError}. ` : 'No recent backup. ', h('a', { href: '#/settings/security' }, 'Check Security & backups'));
 
   if (d.unacked.length) {
     cards.push(h('div', { class: 'card' },
@@ -313,6 +363,7 @@ async function dashboardView(el) {
     h('div', { class: 'page-head' },
       h('div', {}, h('h1', {}, `${greet}, ${me.name.split(' ')[0]}`), h('div', { class: 'muted' }, fmtDate(new Date().toISOString().slice(0, 10)))),
       quick),
+    backupWarning,
     stats.length && h('div', { class: 'stats' }, stats.map(([href, n, label]) => h('a', { class: 'card', href }, h('div', { class: 'stat' }, n), h('div', { class: 'stat-label' }, label)))),
     h('div', { class: 'grid' }, cards));
 }
@@ -330,12 +381,16 @@ async function start() {
   } catch {
     return renderLogin();
   }
+  if (state.me.user.needs2faSetup) {
+    return renderForcedSetup(app, { onDone: start, onSignOut: async () => { await api('/logout', { method: 'POST', body: {} }).catch(() => {}); state.me = null; renderLogin(); } });
+  }
   await loadLists();
   renderShell();
   route();
 }
 
 state.onAuthLost = () => renderLogin('Your session ended. Please sign in again.');
+state.onNeeds2fa = () => { if (state.me) { state.me.user.needs2faSetup = true; start(); } };
 window.addEventListener('hashchange', route);
 window.addEventListener('app:rerender', route);
 start();

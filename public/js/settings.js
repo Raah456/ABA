@@ -2,6 +2,7 @@ import {
   state, h, mount, api, can, roleLabel, attempt, rerender, modal, field, input, select, formValues, fmtDate,
   fmtDateTime, badge, table, loadLists, loadUsers, toast,
 } from './lib.js';
+import { twoFactorCard } from './security.js';
 
 const LIST_LABELS = {
   observation_categories: ['Client log categories', 'Categories staff choose when logging an observation.'],
@@ -64,7 +65,9 @@ export async function usersView(el) {
     !u.id && field('Email', input('email', { type: 'email', required: true }), { required: true }),
     field('Role', roleOptions(u.role), { required: true, help: 'controls exactly what they can see' }),
     field(u.id ? 'Reset password' : 'Temporary password', input('password', { type: 'password', required: !u.id }), { required: !u.id, help: 'at least 10 characters' }),
-    u.id && u.id !== state.me.user.id && h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'active', checked: !!u.active }), 'Active (can sign in)')),
+    u.id && u.id !== state.me.user.id && h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'active', checked: !!u.active }), 'Active (can sign in)'),
+    u.id && u.id !== state.me.user.id && u.totp_enabled ? h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'reset_2fa' }),
+      'Reset two-factor (lost phone). They set it up again at next sign-in.') : null),
   {
     onSubmit: async (form) => {
       const v = formValues(form);
@@ -86,6 +89,7 @@ export async function usersView(el) {
       { label: 'Email', key: 'email' },
       { label: 'Role', render: (u) => [roleLabel(u.role), ' ', badge(state.me.roles[u.role]?.dept === 'clinical' ? 'info' : 'low', state.me.roles[u.role]?.dept)] },
       { label: 'Status', render: (u) => badge(u.active ? 'active' : 'discontinued', u.active ? 'Active' : 'Inactive') },
+      { label: 'Two-factor', render: (u) => (u.totp_enabled ? badge('active', 'On') : badge('', 'Off')) },
       { label: 'Since', render: (u) => fmtDate(u.created_at) },
     ], users, { onRow: (u) => { if (u.role !== 'executive' || state.me.user.role === 'executive') openForm(u); } })));
 }
@@ -134,9 +138,10 @@ export async function accountView(el) {
   field('New password', input('next', { type: 'password', required: true }), { help: 'at least 10 characters' }),
   field('Confirm new password', input('confirm', { type: 'password', required: true })),
   h('button', { class: 'btn primary', type: 'submit' }, 'Change password'));
+  const twoFactor = await twoFactorCard();
   mount(el,
     h('div', { class: 'page-head' }, h('h1', {}, 'My account')),
-    h('div', { class: 'grid' },
+    h('div', { class: 'grid' }, twoFactor,
       h('div', { class: 'card' }, h('h2', {}, me.name),
         h('dl', { class: 'kv' },
           h('dt', {}, 'Email'), h('dd', {}, me.email),

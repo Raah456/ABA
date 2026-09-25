@@ -9,6 +9,8 @@ const {
   requireAuth, requireCap, HttpError, IDLE_MS,
 } = require('../auth');
 const { audit, str, oneOf, id, today, addDays, clinicalClientIds } = require('../access');
+const twofactor = require('../twofactor');
+const { backupStatus } = require('../backup');
 
 // Which permission manages each configurable list.
 const LIST_DOMAINS = {
@@ -21,7 +23,7 @@ const LIST_DOMAINS = {
 
 const MIN_PASSWORD = 10;
 
-module.exports = function coreRoutes(db) {
+module.exports = function coreRoutes(db, cfg) {
   const r = express.Router();
 
   // ---------------- auth ----------------
@@ -41,11 +43,36 @@ module.exports = function coreRoutes(db) {
       throw new HttpError(401, 'Email or password is incorrect.');
     }
     failures.delete(email);
-    const token = createSession(db, user.id);
-    setSessionCookie(req, res, token);
     req.user = user;
-    audit(db, req, 'login');
-    res.json({ ok: true });
+    if (user.totp_enabled) {
+      // Password is right; now the code from their authenticator app.
+      audit(db, req, 'login.password_ok');
+      return res.json({ twoFactor: true, challenge: twofactor.createChallenge(db, user.id) });
+    }
+    const needs2faSetup = twofactor.isRequired(db) && !cfg.browserDemo;
+    setSessionCookie(req, res, createSession(db, user.id, { needs2faSetup }));
+    audit(db, req, 'login', { detail: needs2faSetup ? { needs_2fa_setup: true } : null });
+    return res.json({ ok: true, needs2faSetup });
+  });
+
+  // Second step of sign-in: authenticator code or a recovery code.
+  r.post('/login/2fa', (req, res) => {
+    const challenge = twofactor.findChallenge(db, req.body?.challenge);
+    if (!challenge) throw new HttpError(401, 'That sign-in expired. Enter your email and password again.', 'challenge_expired');
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(challenge.user_id);
+    req.user = user;
+    const method = user?.active ? twofactor.checkSecondFactor(db, cfg.key, user, req.body?.code) : null;
+    if (!method) {
+      db.prepare('UPDATE login_challenges SET attempts = attempts + 1 WHERE token_hash = ?').run(challenge.token_hash);
+      audit(db, req, 'login.2fa_failed');
+      const left = twofactor.CHALLENGE_ATTEMPTS - challenge.attempts - 1;
+      throw new HttpError(401, left > 0 ? `That code didn't work. ${left} tr${left === 1 ? 'y' : 'ies'} left.`
+        : 'Too many wrong codes. Enter your email and password again.', left > 0 ? 'bad_code' : 'challenge_expired');
+    }
+    db.prepare('DELETE FROM login_challenges WHERE token_hash = ?').run(challenge.token_hash);
+    setSessionCookie(req, res, createSession(db, user.id));
+    audit(db, req, 'login', { detail: { second_factor: method } });
+    res.json({ ok: true, usedRecoveryCode: method === 'recovery', recoveryRemaining: twofactor.recoveryRemaining(db, user.id) });
   });
 
   // Demo mode only: lets the sign-in page offer the seeded demo accounts.
@@ -88,7 +115,7 @@ module.exports = function coreRoutes(db) {
   // ---------------- users ----------------
   r.get('/users', requireAuth, (req, res) => {
     const manage = can(req.user, 'users.manage');
-    const rows = db.prepare(`SELECT id, name, role, ${manage ? 'email, active,' : ''} created_at
+    const rows = db.prepare(`SELECT id, name, role, ${manage ? 'email, active, totp_enabled,' : ''} created_at
                              FROM users ${manage ? '' : 'WHERE active = 1'} ORDER BY name`).all();
     res.json(rows);
   });
@@ -131,11 +158,20 @@ module.exports = function coreRoutes(db) {
       if (String(b.password).length < MIN_PASSWORD) throw new HttpError(400, `Password must be at least ${MIN_PASSWORD} characters.`);
       changes.password_hash = hashPassword(String(b.password));
     }
+    // Lost phone: turn two-factor off so they can sign in and set it up again.
+    const reset2fa = !!b.reset_2fa && !!target.totp_enabled;
+    if (reset2fa && userId === req.user.id) throw new HttpError(400, 'Turn off your own two-factor from My account.');
     const keys = Object.keys(changes);
-    if (!keys.length) return res.json({ ok: true });
-    db.prepare(`UPDATE users SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`)
-      .run(...keys.map((k) => changes[k]), userId);
-    if (changes.active === 0 || changes.role || changes.password_hash) {
+    if (!keys.length && !reset2fa) return res.json({ ok: true });
+    if (keys.length) {
+      db.prepare(`UPDATE users SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`)
+        .run(...keys.map((k) => changes[k]), userId);
+    }
+    if (reset2fa) {
+      twofactor.turnOff(db, userId);
+      audit(db, req, 'user.2fa_reset', { entity: 'user', entityId: userId });
+    }
+    if (changes.active === 0 || changes.role || changes.password_hash || reset2fa) {
       db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
     }
     audit(db, req, 'user.update', { entity: 'user', entityId: userId,
@@ -258,6 +294,10 @@ module.exports = function coreRoutes(db) {
     if (can(u, 'billing.view')) {
       out.unbilled = db.prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(units), 0) AS units FROM session_notes
         WHERE status = 'approved' AND billed_at IS NULL`).get();
+    }
+    if (can(u, 'security.manage') && cfg?.backupDir && !cfg.browserDemo) {
+      const b = backupStatus(cfg);
+      out.backup = { overdue: b.overdue, lastError: b.lastError?.message || null };
     }
     if (can(u, 'transport.manage')) {
       out.ridesToday = db.prepare(`SELECT status, COUNT(*) AS n FROM rides WHERE ride_date = ? GROUP BY status`).all(today());

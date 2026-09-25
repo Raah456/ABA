@@ -81,11 +81,23 @@ Every demo account uses the password `demo-password` (for example `tech@demo.tes
 `frontdesk@demo.test`, `coord@demo.test`, `billing@demo.test`, `driver@demo.test`, `exec@demo.test`).
 To see the privacy rules in action, sign in as different roles and compare what each one can see.
 
-To start with a blank database, skip the seed step and create the first executive account:
+To start with a blank database, skip the seed step and create the first executive account
+(it will be asked to set up two-factor sign-in at first sign-in):
 
 ```bash
 ADMIN_EMAIL=you@yourpractice.com ADMIN_PASSWORD='a-long-password' npm start
 ```
+
+### Going live
+
+Follow **[docs/DEPLOY.md](docs/DEPLOY.md)**: a BAA-covered server, `docker compose up -d --build`, automatic HTTPS,
+two-factor for everyone, and encrypted backups copied off the server.
+
+| Command | What it does |
+|---|---|
+| `npm run backup` | Write an encrypted backup now |
+| `npm run restore -- <file> [--force]` | Restore a backup (stop the app first) |
+| `npm run keygen` | Print a new `APP_ENCRYPTION_KEY` |
 
 ### Offline demo page
 
@@ -98,24 +110,31 @@ Changes made in it stay in that browser only.
 
 ## Built-in security
 
+- **Two-factor sign-in** with any authenticator app (Google Authenticator, Microsoft Authenticator, 1Password...),
+  required for everyone by default. Ten one-time recovery codes per person; codes can't be reused; five wrong codes
+  end the attempt. Office managers can reset a lost phone. The owner can make it optional (Settings → Security & backups).
+- **HTTPS only** in production: Caddy gets and renews certificates automatically; plain HTTP is redirected; HSTS; cookies are `Secure`.
+- **Encrypted backups** (AES-256-GCM) every 24 hours, consistent even while staff are working, kept 30 days plus one a month
+  for 12 months, with an optional off-site copy. The owner sees backup status and gets a warning on the home screen if backups stop.
+- Two-factor secrets are stored encrypted with the same key. Production refuses to start without `APP_ENCRYPTION_KEY`.
 - Passwords are hashed with scrypt. Sessions use HttpOnly, SameSite=Strict cookies, and sign-in is rate-limited.
 - Automatic sign-out after 30 minutes of inactivity.
-- **Audit log** of every sign-in, every view of a client record, and every change. Executives can filter it by person or client.
+- **Audit log** of every sign-in (and which second step was used), every view of a client record, and every change.
 - Health-record responses are sent with `Cache-Control: no-store`. A strict Content-Security-Policy is set, and the API only accepts JSON requests (CSRF protection).
+- The database upgrades itself in place when a new version starts.
 - Session notes keep a snapshot of the template they were written with, so editing a template never changes old notes.
   Submitted and approved notes are locked.
 
 ## Before real client data goes in (important)
 
-This is a working MVP, not a finished product. Before storing real PHI:
+The technical safeguards are built in. What remains is the practice's part:
 
-1. **Hosting with a BAA.** Run it on a HIPAA-eligible host that will sign a Business Associate Agreement
-   (for example AWS, Azure or Google Cloud with a BAA). Serve it only over HTTPS and encrypt the disk.
-2. **Backups.** Back up the SQLite file on a schedule and practice restoring it. For many users at once or several
-   locations, move to PostgreSQL. The SQL is kept simple so that move is small.
-3. **Policies.** Have your compliance lead review the role table in `src/permissions.js`. It is your
-   minimum-necessary access policy in code.
-4. **Two-factor sign-in** is not built yet and is strongly recommended.
+1. **Sign a BAA** with the hosting provider and set up the server using [docs/DEPLOY.md](docs/DEPLOY.md)
+   (disk encryption on, off-site backups on).
+2. **Keep the encryption key safe** in a password manager that two trusted people can reach.
+3. **Test a restore** once, then every few months.
+4. **Policies.** Do a HIPAA risk assessment and have your compliance lead review the role table in
+   `src/permissions.js`. It is your minimum-necessary access policy in code.
 5. **Motivity data**: export your programs, targets and client list from Motivity as CSV. An import script is a
    good next step.
 
@@ -132,12 +151,17 @@ This is a working MVP, not a finished product. Before storing real PHI:
 ```
 src/
   permissions.js   roles, ranks and the capability table (the privacy policy)
-  db.js            SQLite schema
+  db.js            SQLite schema and in-place upgrades
   auth.js          passwords, sessions, idle timeout
+  twofactor.js     two-factor sign-in (totp.js: authenticator codes)
+  backup.js        encrypted backups, retention, restore (cli/: backup, restore, keygen)
+  config.js        settings from environment variables
   access.js        per-client access checks, audit logging, validation
   escalations.js   report-up rules
-  routes/          core (auth, users, lists, dashboard), clients, clinical, admin, comms
+  routes/          core (auth, users, lists, dashboard), clients, clinical, admin, comms, profile, security
   seed.js          fictional demo data
 public/            the web app (plain JavaScript modules, no build step)
 test/              API tests (node --test)
+docs/DEPLOY.md     going live: BAA hosting, HTTPS, backups
+Dockerfile, docker-compose.yml, deploy/Caddyfile, .env.example   production setup
 ```

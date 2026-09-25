@@ -1,6 +1,6 @@
 // Shared helpers: DOM building, API calls, modals, formatting, charts.
 
-export const state = { me: null, lists: null, users: null, onAuthLost: null };
+export const state = { me: null, lists: null, users: null, onAuthLost: null, onNeeds2fa: null };
 
 // ---------- DOM ----------
 // h('div', { class: 'x', onclick: fn }, 'text', child, [children])
@@ -34,7 +34,12 @@ export function mount(el, ...children) {
 }
 
 // ---------- API ----------
-export class ApiError extends Error {}
+export class ApiError extends Error {
+  constructor(message, code) {
+    super(message);
+    this.code = code;
+  }
+}
 
 export async function api(path, { method = 'GET', body } = {}) {
   const res = await fetch(`/api${path}`, {
@@ -45,12 +50,13 @@ export async function api(path, { method = 'GET', body } = {}) {
   });
   let data = null;
   try { data = await res.json(); } catch { /* empty */ }
-  if (res.status === 401 && path !== '/login') {
+  if (res.status === 401 && !path.startsWith('/login')) {
     state.me = null;
     state.onAuthLost?.();
     throw new ApiError('Your session ended. Please sign in again.');
   }
-  if (!res.ok) throw new ApiError(data?.error || `Request failed (${res.status})`);
+  if (res.status === 403 && data?.code === '2fa_setup_required') state.onNeeds2fa?.();
+  if (!res.ok) throw new ApiError(data?.error || `Request failed (${res.status})`, data?.code);
   return data;
 }
 

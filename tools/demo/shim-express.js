@@ -4,16 +4,22 @@ function compile(path) {
   const re = new RegExp(`^${path.replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)'; })}/?$`);
   return { re, keys };
 }
+// Runs the handlers in order. Returns a promise when a handler is async, so the caller can wait.
 function runChain(handlers, req, res, done) {
   let i = 0;
+  let pending;
   const next = (err) => {
     if (err) return done(err);
     const h = handlers[i++];
     if (!h) return done();
-    try { h(req, res, next); } catch (e) { done(e); }
+    try {
+      const out = h(req, res, next);
+      if (out && typeof out.then === 'function') pending = out.catch(done);
+    } catch (e) { done(e); }
     return undefined;
   };
   next();
+  return pending;
 }
 class Router {
   constructor() { this.stack = []; }
@@ -31,10 +37,10 @@ class Router {
       if (!m) continue;
       req.params = {};
       layer.keys.forEach((k, j) => { req.params[k] = decodeURIComponent(m[j + 1]); });
-      runChain(layer.handlers, req, res, done);
-      return;
+      return runChain(layer.handlers, req, res, done);
     }
     done();
+    return undefined;
   }
 }
 module.exports = { Router: () => new Router() };

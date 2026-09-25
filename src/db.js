@@ -308,6 +308,29 @@ CREATE TABLE IF NOT EXISTS escalation_events (
   at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- ---------- Security ----------
+-- One-time recovery codes for two-factor sign-in (stored hashed).
+CREATE TABLE IF NOT EXISTS recovery_codes (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash TEXT NOT NULL,
+  used_at TEXT
+);
+
+-- Password accepted, waiting for the authenticator code. Short-lived.
+CREATE TABLE IF NOT EXISTS login_challenges (
+  token_hash TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0
+);
+
+-- Practice-wide settings (e.g. require_2fa).
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
 -- ---------- Oversight ----------
 CREATE TABLE IF NOT EXISTS audit_log (
   id INTEGER PRIMARY KEY,
@@ -332,13 +355,45 @@ CREATE INDEX IF NOT EXISTS idx_rides_date ON rides(ride_date);
 CREATE INDEX IF NOT EXISTS idx_audit_at ON audit_log(at);
 `;
 
+// Changes to tables that already exist. Each runs once, in order, tracked by
+// PRAGMA user_version, so existing databases upgrade in place on startup.
+const MIGRATIONS = [
+  // 1: two-factor sign-in
+  `ALTER TABLE users ADD COLUMN totp_secret TEXT;
+   ALTER TABLE users ADD COLUMN totp_pending TEXT;
+   ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE users ADD COLUMN totp_last_step INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE sessions ADD COLUMN needs_2fa_setup INTEGER NOT NULL DEFAULT 0;
+   INSERT OR IGNORE INTO settings (key, value) VALUES ('require_2fa', '1');`,
+];
+
+function migrate(db) {
+  const version = db.prepare('PRAGMA user_version').get().user_version;
+  for (let i = version; i < MIGRATIONS.length; i++) {
+    tx(db, () => {
+      db.exec(MIGRATIONS[i]);
+      db.exec(`PRAGMA user_version = ${i + 1}`);
+    });
+  }
+}
+
 function openDb(file) {
   if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true });
   const db = new DatabaseSync(file);
   db.exec('PRAGMA foreign_keys = ON;');
   if (file !== ':memory:') db.exec('PRAGMA journal_mode = WAL;');
+  db.exec('PRAGMA busy_timeout = 5000;');
   db.exec(SCHEMA);
+  migrate(db);
   return db;
+}
+
+function getSetting(db, key, fallback = null) {
+  return db.prepare('SELECT value FROM settings WHERE key = ?').get(key)?.value ?? fallback;
+}
+
+function setSetting(db, key, value) {
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value').run(key, String(value));
 }
 
 // Run fn inside a transaction; rolls back if it throws.
@@ -354,4 +409,4 @@ function tx(db, fn) {
   }
 }
 
-module.exports = { openDb, tx };
+module.exports = { openDb, tx, getSetting, setSetting, MIGRATIONS };

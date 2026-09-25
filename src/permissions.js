@@ -71,6 +71,8 @@ const CAPABILITIES = {
   'lists.manage.clinical':   ['qsp', 'clinical_director', 'executive'],
   'lists.manage.admin':      ['office_manager', 'executive'],
   'audit.view':              ['executive'],
+  // Two-factor policy and backups.
+  'security.manage':         ['executive'],
 };
 
 function roleInfo(role) {

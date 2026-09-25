@@ -2,8 +2,7 @@
 
 // Demo data. Every person and client here is fictional.
 const fs = require('node:fs');
-const path = require('node:path');
-const { openDb, tx } = require('./db');
+const { openDb, tx, setSetting } = require('./db');
 const { hashPassword } = require('./auth');
 const { today, addDays, unitsFor } = require('./access');
 
@@ -46,6 +45,9 @@ function seed(db) {
       u[email.split('@')[0]] = Number(db.prepare('INSERT INTO users (email, name, role, password_hash) VALUES (?, ?, ?, ?)')
         .run(email, name, role, pw).lastInsertRowid);
     }
+
+    // Demo accounts sign in with a password only. Real installs require two-factor by default.
+    setSetting(db, 'require_2fa', '0');
 
     for (const [key, values] of Object.entries(LISTS)) {
       values.forEach((v, i) => {
@@ -258,7 +260,11 @@ function seed(db) {
 module.exports = { seed, DEMO_PASSWORD, USERS };
 
 if (require.main === module) {
-  const file = process.env.DB_FILE || path.join(__dirname, '..', 'data', 'aba-practice.db');
+  if (process.env.NODE_ENV === 'production') {
+    console.error('Refusing to load demo data on a production server.');
+    process.exit(1);
+  }
+  const file = require('./config').loadConfig().dbFile;
   if (fs.existsSync(file)) {
     if (!process.argv.includes('--reset')) {
       console.error(`${file} already exists. Run \`npm run seed -- --reset\` to wipe it and load demo data.`);
