@@ -1,11 +1,12 @@
 import {
-  state, h, mount, api, can, roleLabel, attempt, loadLists, fmtDate, fmtTime, ago, badge, empty,
+  state, h, mount, api, can, roleLabel, attempt, loadLists, confirmDialog, fmtDate, fmtTime, ago, badge, empty,
   usageBar, field, input,
 } from './lib.js';
 import { clientsView, clientView, programView, notesView, noteView, newNoteView, templatesView, templateEditView } from './clinical.js';
 import { insuranceView, transportView, billingView } from './admin.js';
 import { announcementsView, reportsView, reportView, openReportForm } from './comms.js';
 import { listsView, usersView, auditView, accountView } from './settings.js';
+import { icon, keepScreenOn, userDraftKeys, clearDraft } from './device.js';
 
 const app = document.getElementById('app');
 let main;
@@ -41,8 +42,12 @@ function parseHash() {
 
 async function route() {
   if (!state.me) return;
-  const { path, query } = parseHash();
+  let { path, query } = parseHash();
+  // Drivers work from a phone in the vehicle: their rides are their home screen.
+  if (path === '/' && can('transport.view_own')) path = '/transport';
   sidebar?.classList.remove('open');
+  document.body.classList.remove('menu-open');
+  keepScreenOn(false);
   highlightNav(path);
   for (const [re, view] of routes) {
     const m = path.match(re);
@@ -67,7 +72,7 @@ function navLink(href, label, countKey) {
 }
 
 function highlightNav(path) {
-  for (const a of document.querySelectorAll('.nav a')) {
+  for (const a of document.querySelectorAll('.nav a, .bottom-nav a')) {
     const p = a.dataset.path;
     a.classList.toggle('active', p === '/' ? path === '/' : path === p || path.startsWith(`${p}/`));
   }
@@ -87,6 +92,46 @@ async function refreshCounts() {
     el.textContent = n;
     el.classList.toggle('hidden', !n);
   }
+}
+
+// Phone/tablet tab bar: the four screens each role uses most, plus "More" for the full menu.
+const TAB_ORDER = {
+  driver: ['rides', 'reports', 'announcements'],
+  technician: ['home', 'clients', 'notes', 'reports'],
+  senior_tech: ['home', 'clients', 'notes', 'reports'],
+  qsp: ['home', 'clients', 'notes', 'reports'],
+  clinical_director: ['home', 'clients', 'notes', 'reports'],
+  admin_staff: ['home', 'insurance', 'rides', 'reports'],
+  coordinator: ['home', 'rides', 'clients', 'reports'],
+  billing: ['home', 'billing', 'insurance', 'reports'],
+  office_manager: ['home', 'clients', 'insurance', 'reports'],
+  executive: ['home', 'clients', 'reports', 'announcements'],
+};
+
+function bottomNav() {
+  const tabs = {
+    home: ['/', 'Home', 'home'],
+    clients: ['/clients', 'Clients', 'clients'],
+    notes: ['/notes', 'Notes', 'notes', 'notes'],
+    reports: ['/reports', 'Reports', 'reports', 'reports'],
+    rides: ['/transport', can('transport.view_own') ? 'My rides' : 'Rides', 'rides'],
+    insurance: ['/insurance', 'Insurance', 'insurance', 'insurance'],
+    billing: ['/billing', 'Billing', 'billing'],
+    announcements: ['/announcements', 'News', 'announcements', 'announcements'],
+  };
+  const keys = TAB_ORDER[state.me.user.role] || ['home', 'reports', 'announcements'];
+  return h('nav', { class: 'bottom-nav', 'aria-label': 'Quick' },
+    keys.map((k) => {
+      const [href, label, ic, countKey] = tabs[k];
+      return h('a', { href: `#${href}`, 'data-path': href }, icon(ic), h('span', {}, label),
+        countKey && h('span', { class: 'count hidden', 'data-count': countKey }));
+    }),
+    h('button', { type: 'button', onclick: toggleMenu, 'aria-label': 'More' }, icon('more'), h('span', {}, 'More')));
+}
+
+function toggleMenu() {
+  sidebar.classList.toggle('open');
+  document.body.classList.toggle('menu-open', sidebar.classList.contains('open'));
 }
 
 function renderShell() {
@@ -120,12 +165,21 @@ function renderShell() {
       h('button', { class: 'btn small', onclick: logout }, 'Sign out')));
   main = h('main', { class: 'main', tabindex: '-1' });
   const topbar = h('div', { class: 'topbar' },
-    h('button', { class: 'icon-btn', 'aria-label': 'Menu', onclick: () => sidebar.classList.toggle('open') }, '☰'),
+    h('button', { class: 'icon-btn', 'aria-label': 'Menu', onclick: toggleMenu }, '☰'),
     h('strong', {}, 'ABA Practice Platform'));
-  mount(app, h('div', { class: 'shell' }, sidebar, h('div', {}, topbar, main)));
+  const scrim = h('div', { class: 'scrim', onclick: toggleMenu });
+  mount(app, h('div', { class: 'shell' }, sidebar, scrim, h('div', {}, topbar, main)), bottomNav());
 }
 
 async function logout() {
+  // On a shared iPad, don't leave one person's unsaved data behind for the next person.
+  const drafts = userDraftKeys(state.me.user.id);
+  if (drafts.length) {
+    const ok = await confirmDialog(`You have unsaved session data for ${drafts.length} client${drafts.length === 1 ? '' : 's'} on this device. Signing out deletes it. Go back and tap "Save session data" to keep it.`,
+      { confirmLabel: 'Delete it and sign out' });
+    if (!ok) return;
+    drafts.forEach(clearDraft);
+  }
   await api('/logout', { method: 'POST', body: {} }).catch(() => {});
   state.me = null;
   renderLogin();
@@ -216,10 +270,16 @@ async function dashboardView(el) {
   }
 
   if (d.myClients) {
-    cards.push(h('div', { class: 'card' },
+    const quick = can('clinical.write') && !can('clinical.view_all');
+    cards.unshift(h('div', { class: 'card' },
       h('div', { class: 'card-head' }, h('h2', {}, can('clinical.view_all') ? 'Active clients' : 'My clients'), h('a', { href: '#/clients' }, 'All')),
-      d.myClients.length ? h('div', { class: 'chips' }, d.myClients.map((c) => h('a', { class: 'chip', href: `#/clients/${c.id}` }, `${c.first_name} ${c.last_name}`)))
-        : empty('You are not assigned to any clients yet.')));
+      !d.myClients.length ? empty('You are not assigned to any clients yet.')
+        : quick ? d.myClients.map((c) => h('div', { class: 'list-item client-quick' },
+          h('a', { class: 'client-name', href: `#/clients/${c.id}/profile` }, `${c.first_name} ${c.last_name}`),
+          h('div', { class: 'row' },
+            h('a', { class: 'btn small', href: `#/clients/${c.id}/profile` }, 'Profile'),
+            h('a', { class: 'btn small primary', href: `#/clients/${c.id}/collect` }, 'Collect data'))))
+          : h('div', { class: 'chips' }, d.myClients.map((c) => h('a', { class: 'chip', href: `#/clients/${c.id}` }, `${c.first_name} ${c.last_name}`)))));
   }
 
   if (d.authAlerts) {

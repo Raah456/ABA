@@ -133,6 +133,21 @@ export function rideStatusSelect(r) {
   return s;
 }
 
+// Drivers get one big button for the next step, sized for a phone in a vehicle.
+function driverActions(r) {
+  const set = async (status, msg) => { if (await attempt(() => api(`/rides/${r.id}`, { method: 'PATCH', body: { status } }), msg)) rerender(); };
+  const next = { scheduled: ['en_route', 'On my way', 'On the way'], en_route: ['completed', r.direction === 'pickup' ? 'Picked up' : 'Dropped off', 'Done'] }[r.status];
+  if (!next) {
+    return h('div', { class: 'row driver-actions' }, h('span', { class: 'muted small spacer' }, 'Tap Undo if this was a mistake.'),
+      h('button', { type: 'button', class: 'btn small', onclick: () => set('scheduled', 'Ride reopened') }, 'Undo'));
+  }
+  return h('div', { class: 'driver-actions' },
+    h('button', { type: 'button', class: 'btn primary big', onclick: () => set(next[0], next[2]) }, next[1]),
+    h('button', { type: 'button', class: 'btn small', onclick: async () => {
+      if (await confirmDialog(`Mark ${r.client_name} as a no-show? The coordinator will see it right away.`, { confirmLabel: 'No-show' })) set('no_show', 'Marked as no-show');
+    } }, 'No-show'));
+}
+
 export async function openRideForm(r) {
   const [clients, users] = await Promise.all([api('/clients'), loadUsers()]);
   const drivers = users.filter((u) => u.role === 'driver' && u.active !== 0);
@@ -180,12 +195,14 @@ export async function transportView(el, _, query) {
 
   const rideCard = (r) => h('div', { class: `ride ${r.status}` },
     h('div', { class: 'row' }, h('span', { class: 'time' }, fmtTime(r.scheduled_time)), h('span', {}, r.direction === 'pickup' ? 'Pick up' : 'Drop off'),
-      h('span', { class: 'spacer' }), manage || driverView ? rideStatusSelect(r) : badge(r.status)),
+      h('span', { class: 'spacer' }), manage ? rideStatusSelect(r) : badge(r.status)),
     h('div', {}, h('strong', {}, r.client_name)),
     h('div', { class: 'small muted' }, `${r.from_address || '?'} → ${r.to_address || '?'}`),
-    (driverView || manage) && r.guardian_phone && h('div', { class: 'small' }, `${r.guardian_name || 'Guardian'}: `, h('a', { href: `tel:${r.guardian_phone}` }, r.guardian_phone)),
+    (driverView || manage) && r.guardian_phone && h('div', { class: 'small row guardian' }, h('span', {}, `${r.guardian_name || 'Guardian'}: ${r.guardian_phone}`),
+      driverView && h('a', { class: 'btn small', href: `tel:${r.guardian_phone}` }, 'Call')),
     r.alerts && h('div', { class: 'small ride-alert' }, h('strong', {}, '⚠ '), r.alerts),
     r.notes && h('div', { class: 'small' }, `📝 ${r.notes}`),
+    driverView && driverActions(r),
     manage && h('div', { class: 'row end' }, h('button', { class: 'btn small', onclick: () => openRideForm(r) }, 'Edit')));
 
   let body;

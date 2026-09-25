@@ -80,12 +80,31 @@ p { margin: 0 0 10px; }
 .topbar { display: none; }
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
 
-@media (max-width: 860px) {
+/* Phones and tablets in portrait (iPad included): full-width content, slide-out menu, bottom tab bar.
+   Laptops and iPads in landscape (1024px+) keep the sidebar. */
+.bottom-nav, .scrim { display: none; }
+@media (max-width: 1023px) {
+  :root { --bottom-nav-h: calc(60px + env(safe-area-inset-bottom, 0px)); }
   .shell { grid-template-columns: 1fr; }
-  .sidebar { position: fixed; inset: 0 30% 0 0; z-index: 30; transform: translateX(-105%); transition: transform 0.18s; height: 100%; box-shadow: var(--shadow); }
+  .sidebar { position: fixed; inset: 0 auto 0 0; width: min(300px, 82vw); z-index: 40; transform: translateX(-105%); transition: transform 0.18s;
+    height: 100%; box-shadow: var(--shadow); padding-top: calc(18px + env(safe-area-inset-top, 0px)); padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px)); }
   .sidebar.open { transform: none; }
-  .topbar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 20; }
-  .main { padding: 16px 16px 60px; }
+  body.menu-open .scrim { display: block; position: fixed; inset: 0; background: rgba(10, 15, 25, 0.35); z-index: 35; }
+  .topbar { display: flex; align-items: center; gap: 10px; padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px;
+    background: var(--panel); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 20; }
+  .main { padding: 16px 16px calc(var(--bottom-nav-h) + 24px); }
+  .bottom-nav { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--panel); border-top: 1px solid var(--border);
+    padding-bottom: env(safe-area-inset-bottom, 0px); box-shadow: 0 -2px 12px rgba(20, 30, 50, 0.06); }
+  .bottom-nav a, .bottom-nav button { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    min-height: 60px; color: var(--muted); font: inherit; font-size: 0.72rem; background: none; border: 0; position: relative; cursor: pointer; }
+  .bottom-nav a:hover { text-decoration: none; }
+  .bottom-nav a.active { color: var(--accent); font-weight: 600; }
+  .bottom-nav .count { position: absolute; top: 6px; left: calc(50% + 6px); background: var(--bad); color: #fff; border-radius: 999px;
+    font-size: 0.66rem; padding: 0 5px; font-weight: 700; }
+  .toasts { bottom: calc(var(--bottom-nav-h) + 12px); }
+}
+@media (min-width: 640px) and (max-width: 1023px) {
+  .main { padding-left: 24px; padding-right: 24px; }
 }
 
 /* ---------- components ---------- */
@@ -276,3 +295,46 @@ details > summary { cursor: pointer; color: var(--accent); margin: 8px 0; }
 .seg.seg-wrap { flex-wrap: wrap; }
 .seg.seg-wrap label { border-bottom: 1px solid var(--border); }
 .ride-alert { color: var(--bad); background: var(--bad-soft); border-radius: 6px; padding: 4px 8px; margin: 4px 0; }
+
+/* ---------- devices ---------- */
+.save-bar { bottom: var(--bottom-nav-h, 0px); }
+.client-quick { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.client-quick .client-name { font-weight: 600; }
+.driver-actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.driver-actions .big { flex: 1; justify-content: center; min-height: 48px; font-size: 1rem; }
+.guardian { gap: 8px; }
+.trial-run:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
+
+/* Touch screens (phones, iPads): bigger targets, and 16px inputs so iOS doesn't zoom on focus. */
+@media (pointer: coarse) {
+  .btn { min-height: 44px; padding: 9px 14px; }
+  .btn.small { min-height: 38px; }
+  input[type=text], input[type=email], input[type=password], input[type=number], input[type=date], input[type=time], input[type=search], select, textarea { font-size: 16px; min-height: 44px; }
+  .inline-select { min-height: 38px; }
+  .nav a { padding: 11px 10px; }
+  .tabs a { padding: 12px 14px; }
+  .check input { width: 22px; height: 22px; }
+  .seg label { padding: 10px 14px; }
+  .result-btn { min-height: 48px; font-size: 0.95rem; }
+  button.result { min-width: 34px; height: 32px; }
+  .keyboard-hint { display: none; }
+  tr.clickable:hover td { background: none; }
+}
+
+/* Phones: tables become stacked cards, and dialogs slide up from the bottom. */
+@media (max-width: 640px) {
+  .table-wrap table, .table-wrap tbody, .table-wrap tr, .table-wrap td { display: block; width: 100%; }
+  .table-wrap thead { display: none; }
+  .table-wrap tr { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  .table-wrap tr:last-child { border-bottom: 0; }
+  .table-wrap td { border: 0; padding: 3px 0; display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px; align-items: start; }
+  .table-wrap td::before { content: attr(data-label); color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; padding-top: 3px; }
+  .table-wrap td[data-label=""] { grid-template-columns: minmax(0, 1fr); justify-items: start; }
+  .table-wrap td[data-label=""]::before { display: none; }
+  .modal-backdrop { place-items: end center; padding: 0; }
+  .modal { width: 100%; max-height: 92vh; border-radius: 16px 16px 0 0; padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
+  .modal .row.end { position: sticky; bottom: 0; background: var(--panel); padding-top: 10px; }
+  .modal .row.end .btn { flex: 1; justify-content: center; }
+  .page-head > .row { width: 100%; }
+  h1 { font-size: 1.3rem; }
+}

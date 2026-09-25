@@ -5,6 +5,7 @@ import {
 } from './lib.js';
 import { openRideForm, rideStatusSelect, openPolicyForm, openCheckForm, openAuthForm } from './admin.js';
 import { openReportForm } from './comms.js';
+import { draftKey, readDraft, writeDraft, clearDraft, keepScreenOn, canKeepScreenOn, stillWorking } from './device.js';
 
 const MEASUREMENT_LABELS = { percent: '% correct', frequency: 'Frequency (count)', duration: 'Duration (minutes)', rating: 'Rating / prompt level' };
 const STATUS_LABELS = { baseline: 'Baseline', active: 'Active', on_hold: 'On hold', mastered: 'Mastered', discontinued: 'Discontinued' };
@@ -471,20 +472,42 @@ async function profileTab(el, client) {
 }
 
 // ---------- collect data (trial by trial) ----------
+// Built for a phone or iPad at the table: big buttons, taps kept on the device until
+// saved (so a locked screen, a dead battery or a timed-out sign-in loses nothing), and an
+// option to keep the screen on. On a laptop, keys 1-4 record results for the focused trial.
 async function collectTab(el, client) {
   const programs = (await api(`/clients/${client.id}/programs`)).filter((p) => ['active', 'baseline'].includes(p.status));
-  // runs[programId] = [{ trial_id, result, note }] in the order they were run
-  const runs = new Map(programs.map((p) => [p.id, []]));
-  const values = new Map();
-  const notes = new Map();
-  const dateInput = input('session_date', { type: 'date', value: todayIso(), required: true });
+  const key = draftKey(state.me.user.id, client.id);
+  const draft = readDraft(key);
+  const liveTrials = new Set(programs.flatMap((p) => p.trials.map((t) => t.id)));
+  // runs[programId] = [{ trial_id, result }] in the order they were run
+  const runs = new Map(programs.map((p) => [p.id, (draft?.runs?.[p.id] || []).filter((r) => liveTrials.has(r.trial_id))]));
+  const values = new Map(Object.entries(draft?.values || {}).map(([k, v]) => [Number(k), v]));
+  const notes = new Map(Object.entries(draft?.notes || {}).map(([k, v]) => [Number(k), v]));
+  const dateInput = input('session_date', { type: 'date', value: draft?.date || todayIso(), required: true });
   const saveBtn = h('button', { class: 'btn primary', type: 'button' }, 'Save session data');
-  const count = h('span', { class: 'muted small' });
+  const count = h('span', { class: 'muted small', role: 'status' });
+  const hasData = () => [...runs.values()].some((r) => r.length) || [...values.values()].some((v) => v !== '' && v != null);
+
+  const persist = () => {
+    stillWorking();
+    if (!hasData()) { clearDraft(key); return; }
+    writeDraft(key, {
+      date: dateInput.value,
+      runs: Object.fromEntries(runs),
+      values: Object.fromEntries(values),
+      notes: Object.fromEntries(notes),
+      at: new Date().toISOString(),
+    });
+  };
+  dateInput.addEventListener('change', persist);
 
   const updateCount = () => {
     const trials = [...runs.values()].reduce((a, r) => a + r.length, 0);
-    const other = [...values.values()].filter((v) => v !== '').length;
-    count.textContent = trials || other ? `${trials} trial${trials === 1 ? '' : 's'}${other ? ` + ${other} count${other === 1 ? '' : 's'}` : ''} not saved yet` : 'Nothing recorded yet';
+    const other = [...values.values()].filter((v) => v !== '' && v != null).length;
+    count.textContent = trials || other
+      ? `${trials} trial${trials === 1 ? '' : 's'}${other ? ` + ${other} count${other === 1 ? '' : 's'}` : ''} not saved yet (kept on this device)`
+      : 'Nothing recorded yet';
     saveBtn.disabled = !trials && !other;
   };
 
@@ -498,28 +521,41 @@ async function collectTab(el, client) {
       for (const [trialId, box] of tallies) {
         const mineRuns = run.map((r, i) => ({ ...r, i })).filter((r) => r.trial_id === trialId);
         mount(box, mineRuns.map((r) => h('button', { type: 'button', class: `result ${RESULT[r.result].kind}`, title: `${RESULT[r.result].label}. Tap to undo.`,
-          'aria-label': `Undo ${RESULT[r.result].label}`, onclick: () => { run.splice(r.i, 1); refresh(); } }, RESULT[r.result].short)));
+          'aria-label': `Undo ${RESULT[r.result].label}`, onclick: () => { run.splice(r.i, 1); refresh(); persist(); } }, RESULT[r.result].short)));
       }
       updateCount();
     };
+    const record = (trialId, result) => { run.push({ trial_id: trialId, result }); refresh(); persist(); };
     let body;
     if (p.measurement === 'percent') {
       body = p.trials.length ? p.trials.map((t) => {
         const tally = h('div', { class: 'tally' });
         tallies.set(t.id, tally);
-        return h('div', { class: 'trial-run' },
-          h('div', { class: 'trial-info' }, h('strong', {}, t.name), h('div', { class: 'muted small pre' }, t.description)),
-          h('div', { class: 'trial-buttons' }, RESULTS.map((r) => h('button', {
-            type: 'button', class: `btn small result-btn ${r.kind}`, title: r.help,
-            onclick: () => { run.push({ trial_id: t.id, result: r.key }); refresh(); },
-          }, `${r.short} ${r.label}`))),
-          tally);
+        return h('div', {
+          class: 'trial-run', tabindex: '0', 'aria-label': `${t.name}. Keys 1 to 4 record a result, Backspace undoes.`,
+          onkeydown: (e) => {
+            if (e.target !== e.currentTarget) return;
+            const idx = ['1', '2', '3', '4'].indexOf(e.key);
+            if (idx >= 0) { e.preventDefault(); record(t.id, RESULTS[idx].key); }
+            if (e.key === 'Backspace') {
+              e.preventDefault();
+              const last = run.map((r) => r.trial_id).lastIndexOf(t.id);
+              if (last >= 0) { run.splice(last, 1); refresh(); persist(); }
+            }
+          },
+        },
+        h('div', { class: 'trial-info' }, h('strong', {}, t.name), h('div', { class: 'muted small pre' }, t.description)),
+        h('div', { class: 'trial-buttons' }, RESULTS.map((r, i) => h('button', {
+          type: 'button', class: `btn small result-btn ${r.kind}`, title: `${r.help} (key ${i + 1})`,
+          onclick: () => record(t.id, r.key),
+        }, `${r.short} ${r.label}`))),
+        tally);
       }) : empty('No trials written yet. Ask your QSP to add them.');
     } else {
-      const inp = h('input', { type: 'number', min: 0, step: 'any', 'aria-label': MEASUREMENT_LABELS[p.measurement], placeholder: MEASUREMENT_LABELS[p.measurement],
-        oninput: (e) => { values.set(p.id, e.target.value); updateCount(); } });
-      body = h('div', { class: 'row' }, inp, p.measurement === 'frequency' && h('button', { type: 'button', class: 'btn small', onclick: () => {
-        inp.value = String((Number(inp.value) || 0) + 1); values.set(p.id, inp.value); updateCount();
+      const inp = h('input', { type: 'number', inputmode: 'decimal', min: 0, step: 'any', value: values.get(p.id) ?? '', 'aria-label': MEASUREMENT_LABELS[p.measurement], placeholder: MEASUREMENT_LABELS[p.measurement],
+        oninput: (e) => { values.set(p.id, e.target.value); updateCount(); persist(); } });
+      body = h('div', { class: 'row' }, inp, p.measurement === 'frequency' && h('button', { type: 'button', class: 'btn result-btn', onclick: () => {
+        inp.value = String((Number(inp.value) || 0) + 1); values.set(p.id, inp.value); updateCount(); persist();
       } }, '+1'));
     }
     const card = h('div', { class: 'card' },
@@ -528,7 +564,8 @@ async function collectTab(el, client) {
         summary),
       p.instructions && h('details', {}, h('summary', { class: 'small' }, 'Program instructions'), h('p', { class: 'pre small' }, p.instructions)),
       body,
-      h('input', { type: 'text', class: 'session-note', placeholder: 'Note for this program (optional)', 'aria-label': 'Note', oninput: (e) => notes.set(p.id, e.target.value) }));
+      h('input', { type: 'text', class: 'session-note', value: notes.get(p.id) || '', placeholder: 'Note for this program (optional)', 'aria-label': 'Note',
+        oninput: (e) => { notes.set(p.id, e.target.value); persist(); } }));
     refresh();
     return card;
   };
@@ -544,13 +581,25 @@ async function collectTab(el, client) {
     }
     saveBtn.disabled = true;
     const r = await attempt(() => api(`/clients/${client.id}/session-data`, { method: 'POST', body: { session_date: dateInput.value, entries } }));
-    if (r) { toast(`Saved data for ${r.saved.length} program${r.saved.length === 1 ? '' : 's'}`); rerender(); } else saveBtn.disabled = false;
+    if (r) { clearDraft(key); toast(`Saved data for ${r.saved.length} program${r.saved.length === 1 ? '' : 's'}`); rerender(); } else saveBtn.disabled = false;
   });
 
+  const restored = draft && hasData() && h('div', { class: 'banner info row' },
+    h('span', { class: 'spacer' }, `Picked up where you left off: unsaved data from ${fmtDateTime(draft.at.replace('T', ' ').slice(0, 19))} was kept on this device.`),
+    h('button', { class: 'btn small', type: 'button', onclick: async () => {
+      if (await confirmDialog('Delete the unsaved data on this device? It has not been saved to the client\'s record.', { confirmLabel: 'Delete' })) { clearDraft(key); rerender(); }
+    } }, 'Discard'));
+
+  const awake = canKeepScreenOn && h('label', { class: 'check' },
+    h('input', { type: 'checkbox', onchange: async (e) => { const ok = await keepScreenOn(e.target.checked); if (e.target.checked && !ok) { e.target.checked = false; toast('This device would not keep the screen on.', 'error'); } } }),
+    'Keep screen on');
+
   mount(el,
+    restored,
     h('div', { class: 'card collect-head' },
-      h('div', { class: 'row' }, field('Session date', dateInput), h('span', { class: 'spacer' })),
-      h('p', { class: 'muted small' }, 'Tap a result each time you run a trial. Tap a result chip to undo it. Only "Correct" counts toward % correct; prompted trials are recorded so the team can see prompt dependence.')),
+      h('div', { class: 'row' }, field('Session date', dateInput), h('span', { class: 'spacer' }), awake),
+      h('p', { class: 'muted small' }, 'Tap a result each time you run a trial; tap a result chip to undo it. Only "Correct" counts toward % correct. Your taps are kept on this device until you save.'),
+      h('p', { class: 'muted small keyboard-hint' }, 'Keyboard: click a trial, then press 1 Correct, 2 Prompted, 3 Incorrect, 4 No response, Backspace to undo.')),
     programs.length ? programs.map(programCard) : empty('No active programs for this client yet.'),
     programs.length > 0 && h('div', { class: 'save-bar' }, count, h('span', { class: 'spacer' }), saveBtn));
   updateCount();

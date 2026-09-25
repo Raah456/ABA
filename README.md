@@ -32,6 +32,23 @@ The whole policy is one table in [`src/permissions.js`](src/permissions.js), and
 | Driver coordination on spreadsheets | **Transportation board**: one column per driver for the day, plus an "Unassigned" column. "Copy from another day" rebuilds a recurring week. Drivers get a phone-friendly "My rides" page with the guardian's phone number and a status dropdown. |
 | Billing | Once a QSP approves a note, the **billing queue** receives the date, code, units, provider and authorization, **but never the note text**. Billing can export CSV and mark notes as billed. |
 
+## Phones, iPads and laptops
+
+The layout adapts to screen size and to touch vs. mouse, so it works on any device without separate apps.
+
+| Who | Usually on | What's tuned for it |
+|---|---|---|
+| Behavior techs | Phone or iPad at the table | Home screen lists their clients with **Profile** and **Collect data** buttons. Large tap buttons for each trial. Taps are **kept on the device until saved**, so a locked screen, a dead battery, a reload or the 30-minute sign-out loses nothing; they come back after signing in. Optional **Keep screen on**. |
+| Drivers | Phone in the vehicle | Opens straight to **My rides**. One big button for the next step (On my way → Picked up / Dropped off), a Call button next to the guardian's number, safety alerts on each ride. |
+| QSPs and leads | Laptop, iPad for supervision | Full sidebar and wide tables on laptops and landscape iPads. Keyboard entry while observing: click a trial, press 1 Correct, 2 Prompted, 3 Incorrect, 4 No response, Backspace to undo. |
+| Front desk, billing, office | Laptop | Full tables and bulk actions; on a phone, tables turn into readable cards. |
+
+- **Phones and portrait iPads** get a bottom tab bar with that role's four most-used screens, plus **More** for everything else.
+- **Laptops and landscape iPads** (1024px and wider) get the sidebar.
+- On touch screens, buttons and inputs are at least 44px tall, and text inputs are 16px so iPhones don't zoom in.
+- **Add to Home Screen** (Safari share menu on iPhone/iPad, or Chrome's install option) opens it full-screen with its own icon, like an app.
+- **Shared center iPads:** unsaved data is stored per person, and signing out warns first and then deletes that person's unsaved data from the device.
+
 ## Roles and who sees what
 
 | Role | Department | Rank | Sees |

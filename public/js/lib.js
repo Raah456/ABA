@@ -257,7 +257,8 @@ export function table(columns, rows, { onRow, emptyText = 'Nothing here yet.' } 
   return h('div', { class: 'table-wrap' }, h('table', {},
     h('thead', {}, h('tr', {}, columns.map((c) => h('th', {}, c.label)))),
     h('tbody', {}, rows.map((r) => h('tr', { class: onRow ? 'clickable' : null, onclick: onRow ? () => onRow(r) : null },
-      columns.map((c) => h('td', {}, c.render ? c.render(r) : r[c.key] ?? '—')))))));
+      columns.map((c) => h('td', { 'data-label': typeof c.label === 'string' ? c.label : '' },
+        h('div', { class: 'cell' }, c.render ? c.render(r) : r[c.key] ?? '—'))))))));
 }
 
 export function usageBar(pct) {
