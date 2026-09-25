@@ -44,6 +44,9 @@ const CAPABILITIES = {
   'programs.manage':         ['qsp', 'clinical_director'],
   'notes.approve':           ['qsp', 'clinical_director'],
   'templates.manage':        ['qsp', 'clinical_director'],
+  // Client profile (reinforcers, triggers, what helps). Everyone on the team reads it
+  // and can share ideas; leads and QSPs keep the profile itself current.
+  'profile.edit':            ['senior_tech', 'qsp', 'clinical_director'],
 
   // Insurance, eligibility checks, authorizations.
   'insurance.view':          ['admin_staff', 'billing', 'office_manager', 'executive'],

@@ -175,7 +175,8 @@ module.exports = function adminRoutes(db) {
     }
     const rows = db.prepare(`
       SELECT r.*, c.first_name || ' ' || c.last_name AS client_name, c.guardian_name, c.guardian_phone,
-             d.name AS driver_name
+             d.name AS driver_name,
+             (SELECT body FROM client_profile p WHERE p.client_id = r.client_id AND p.section = 'alerts') AS alerts
       FROM rides r JOIN clients c ON c.id = r.client_id LEFT JOIN users d ON d.id = r.driver_id
       WHERE ${where.join(' AND ')} ORDER BY r.ride_date, r.scheduled_time`).all(...args);
     res.json(rows);

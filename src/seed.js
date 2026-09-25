@@ -88,31 +88,84 @@ function seed(db) {
         { key: 'feedback', label: 'Feedback given to staff', type: 'textarea' },
       ]), u.qsp);
 
-    // Programs with data
+    // Programs with trials and trial-by-trial data
     const t = today();
-    const addProgram = (clientId, name, domain, measurement, targets, mastery, direction, series) => {
-      const pid = Number(db.prepare(`INSERT INTO programs (client_id, name, domain, goal, measurement, targets, mastery_value,
-          mastery_sessions, mastery_direction, instructions, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(clientId, name, domain, `${name} across settings and people.`, measurement, JSON.stringify(targets),
-          mastery, 3, direction, 'Run 10 trials per session. Use least-to-most prompting.', u.qsp).lastInsertRowid);
+    const addProgram = (clientId, name, domain, measurement, trials, mastery, direction, series, instructions) => {
+      const pid = Number(db.prepare(`INSERT INTO programs (client_id, name, domain, goal, measurement, mastery_value,
+          mastery_sessions, mastery_direction, instructions, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(clientId, name, domain, `${name} across settings and people.`, measurement,
+          mastery, 3, direction, instructions, u.qsp).lastInsertRowid);
       db.prepare('INSERT INTO program_changes (program_id, changed_by, summary) VALUES (?, ?, ?)').run(pid, u.qsp, 'Program created');
+      const trialIds = trials.map(([tn, desc], i) => Number(db.prepare(`INSERT INTO program_trials (program_id, name, description, sort, created_by)
+        VALUES (?, ?, ?, ?, ?)`).run(pid, tn, desc, i, u.qsp).lastInsertRowid));
       series.forEach((v, i) => {
         const d = addDays(t, i - series.length);
         if (measurement === 'percent') {
-          db.prepare(`INSERT INTO program_data (program_id, session_date, target, value, correct, total, recorded_by)
-                      VALUES (?, ?, ?, ?, ?, 10, ?)`).run(pid, d, targets[0] || null, v * 10, v, u.tech);
+          const dataId = Number(db.prepare(`INSERT INTO program_data (program_id, session_date, value, correct, total, recorded_by)
+                      VALUES (?, ?, ?, ?, 10, ?)`).run(pid, d, v * 10, v, u.tech).lastInsertRowid);
+          for (let k = 0; k < 10; k++) {
+            const result = k < v ? 'correct' : (k % 2 ? 'prompted' : 'incorrect');
+            db.prepare('INSERT INTO trial_results (program_data_id, trial_id, result, seq) VALUES (?, ?, ?, ?)')
+              .run(dataId, trialIds[k % trialIds.length], result, k + 1);
+          }
         } else {
           db.prepare('INSERT INTO program_data (program_id, session_date, value, recorded_by) VALUES (?, ?, ?, ?)').run(pid, d, v, u.tech);
         }
       });
       return pid;
     };
-    const mand = addProgram(c[0], 'Manding for preferred items', 'Communication', 'percent', ['Juice', 'iPad', 'Bubbles'], 80, 'at_least', [3, 4, 4, 6, 7, 8, 8, 9]);
-    addProgram(c[0], 'Elopement', 'Behavior reduction', 'frequency', [], 1, 'at_most', [6, 5, 5, 4, 3, 3, 2, 2]);
-    addProgram(c[1], 'Handwashing task analysis', 'Daily living', 'percent', [], 90, 'at_least', [4, 5, 5, 6, 6, 7]);
-    addProgram(c[2], 'Greeting peers', 'Social', 'percent', ['Hi', 'Wave'], 80, 'at_least', [2, 3, 3, 4]);
+    const mand = addProgram(c[0], 'Manding for preferred items', 'Communication', 'percent', [
+      ['Juice', 'Hold the juice cup in view, out of reach. Wait 3 seconds for "juice" (word or sign). Correct = independent request before any prompt.'],
+      ['iPad', 'Show the iPad with the music app open. Wait 3 seconds. Accept "iPad" or "music". Deliver 30 seconds of access.'],
+      ['Bubbles', 'Blow one round of bubbles, then stop and hold the wand. Wait 3 seconds for "bubbles" or "more". Blow again right away when correct.'],
+    ], 80, 'at_least', [3, 4, 4, 6, 7, 8, 8, 9], 'Least-to-most prompting: gesture, then partial vocal model, then full model. Record a full or partial model as "prompted".');
+    addProgram(c[0], 'Elopement', 'Behavior reduction', 'frequency', [], 1, 'at_most', [6, 5, 5, 4, 3, 3, 2, 2],
+      'Count each time Ava leaves the work area by more than 5 feet without permission. Block the exit calmly, no eye contact, redirect to the visual schedule.');
+    addProgram(c[1], 'Handwashing task analysis', 'Daily living', 'percent', [
+      ['Turn on water', 'Liam turns the faucet to warm on his own. Correct = within 5 seconds of "time to wash hands".'],
+      ['Soap', 'One pump of soap into the palm. Correct = one pump, no help.'],
+      ['Scrub', 'Rubs palms and backs of hands for about 10 seconds (count out loud with him).'],
+      ['Rinse and dry', 'Rinses all soap off, turns water off, dries with a paper towel and throws it away.'],
+    ], 90, 'at_least', [4, 5, 5, 6, 6, 7], 'Forward chaining. Use the picture strip above the sink. Praise each step.');
+    addProgram(c[2], 'Greeting peers', 'Social', 'percent', [
+      ['Say "hi"', 'When a peer comes within 3 feet and makes eye contact, Noah says "hi" (any volume). Prompt with a whisper model only.'],
+      ['Wave', 'When a peer waves first, Noah waves back within 3 seconds.'],
+    ], 80, 'at_least', [2, 3, 3, 4], 'Run during arrival and recess. Set up at least 5 peer greetings per session.');
     db.prepare('INSERT INTO program_changes (program_id, changed_by, summary, reason) VALUES (?, ?, ?, ?)')
-      .run(mand, u.qsp, 'Added target "Bubbles"', 'Mom reports he is asking for bubbles at home; use as new target.');
+      .run(mand, u.qsp, 'added trial "Bubbles"', 'Mom reports Ava is asking for bubbles at home; use it as a new trial.');
+
+    // Client profiles: what anyone working with the client should know
+    const profile = (clientId, section, body, by) => db.prepare(`INSERT INTO client_profile (client_id, section, body, updated_by)
+      VALUES (?, ?, ?, ?)`).run(clientId, section, body, by);
+    profile(c[0], 'alerts', 'Peanut allergy (EpiPen in blue backpack). Elopement risk: hold hand in parking lots and keep doors latched. Needs 5-point car seat.', u.qsp);
+    profile(c[0], 'about', 'Loves Bluey, trains and anything that spins. Great at puzzles and matching. Warms up fast if you start with play.', u.lead);
+    profile(c[0], 'communication', 'Single words and a few signs (more, help, all done). Uses a picture board for snacks. Nods for yes; says "no" clearly.', u.qsp);
+    profile(c[0], 'reinforcement', 'Start on FR2 for new skills, thin to VR4 once steady. Give edibles in tiny pieces (half a fruit snack). Rotate items every ~10 minutes; she satiates on the iPad fast.', u.qsp);
+    profile(c[0], 'triggers', 'Loud hand dryers, being told "no" without an alternative, transitions away from the iPad without a warning.', u.lead);
+    profile(c[0], 'calming', '• Deep pressure squeezes on shoulders (ask first)\n• Dim the lights and offer the spinning toy\n• Count to 10 together slowly', u.qsp);
+    profile(c[0], 'sensory', 'Seeks spinning and deep pressure. Avoids sticky textures and loud sudden noises.', u.lead);
+    profile(c[0], 'family', 'Mom (Maria) prefers texts over calls. Dad does Tuesday pickups. Spanish is spoken at home; Ava understands both.', u.qsp);
+    profile(c[1], 'alerts', 'Asthma: inhaler in front office. Needs a booster seat.', u.qsp);
+    profile(c[1], 'about', 'Loves dinosaurs and Minecraft. Likes to be the helper.', u.qsp);
+    profile(c[1], 'reinforcement', 'Token board (5 tokens) traded for Minecraft videos. Specific praise works well.', u.qsp);
+    profile(c[2], 'alerts', 'No known allergies. May bolt toward water; stay between Noah and any pond.', u.qsp);
+
+    const reinforcer = (clientId, name, category, strength, notes, by, active = 1) => db.prepare(`INSERT INTO reinforcers
+      (client_id, name, category, strength, notes, added_by, active) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(clientId, name, category, strength, notes, by, active);
+    reinforcer(c[0], 'Bluey clips on iPad', 'activity', 'high', '30-60 seconds per trade. Satiates after about 20 minutes total.', u.qsp);
+    reinforcer(c[0], 'Fruit snacks', 'edible', 'high', 'Half a snack at a time. Peanut-free brand only (check the label).', u.qsp);
+    reinforcer(c[0], 'Spinning light-up top', 'sensory', 'medium', 'Great during breaks and for calming.', u.lead);
+    reinforcer(c[0], 'Tickles and "gonna get you"', 'social', 'medium', 'Works best after she has already warmed up.', u.lead);
+    reinforcer(c[0], 'Stickers', 'tangible', 'low', 'Stopped working in August.', u.qsp, 0);
+    reinforcer(c[1], 'Minecraft videos', 'activity', 'high', 'Earned with a full token board.', u.qsp);
+    reinforcer(c[1], 'Dinosaur figures', 'tangible', 'medium', null, u.qsp);
+
+    const idea = (clientId, author, kind, category, title, details) => Number(db.prepare(`INSERT INTO suggestions
+      (client_id, author_id, kind, category, title, details) VALUES (?, ?, ?, ?, ?, ?)`).run(clientId, author, kind, category, title, details).lastInsertRowid);
+    const i1 = idea(c[0], u.tech, 'reinforcer', 'sensory', 'Bubbles', 'She lit up when I used bubbles at the end of a session. Worked better than the iPad on Thursday.');
+    idea(c[0], u.tech, 'strategy', null, 'Two-minute warning with the sand timer', 'Showing her the sand timer before we switch off the iPad cut down on the crying a lot.');
+    idea(c[1], u.tech, 'trigger', null, 'Fire drills', 'He covered his ears and hid under the table during the drill. Might need headphones on drill days.');
+    db.prepare('INSERT INTO suggestion_votes (suggestion_id, user_id) VALUES (?, ?)').run(i1, u.lead);
 
     // Session notes in each state
     const addNote = (clientId, author, daysAgo, start, end, status, extra = {}) => {

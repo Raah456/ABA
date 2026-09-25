@@ -184,6 +184,7 @@ export async function transportView(el, _, query) {
     h('div', {}, h('strong', {}, r.client_name)),
     h('div', { class: 'small muted' }, `${r.from_address || '?'} → ${r.to_address || '?'}`),
     (driverView || manage) && r.guardian_phone && h('div', { class: 'small' }, `${r.guardian_name || 'Guardian'}: `, h('a', { href: `tel:${r.guardian_phone}` }, r.guardian_phone)),
+    r.alerts && h('div', { class: 'small ride-alert' }, h('strong', {}, '⚠ '), r.alerts),
     r.notes && h('div', { class: 'small' }, `📝 ${r.notes}`),
     manage && h('div', { class: 'row end' }, h('button', { class: 'btn small', onclick: () => openRideForm(r) }, 'Edit')));
 

@@ -4,6 +4,7 @@ const express = require('express');
 const { can } = require('../permissions');
 const { requireAuth, requireCap, HttpError } = require('../auth');
 const { tx } = require('../db');
+const { sharedAlerts } = require('./profile');
 const {
   audit, str, oneOf, date, id, requireBasicView, canViewClinical, canWriteClinical, assertClient,
 } = require('../access');
@@ -61,7 +62,7 @@ module.exports = function clientRoutes(db) {
       manageTeam: can(u, 'assignments.manage'),
     };
     audit(db, req, 'client.view', { entity: 'client', entityId: clientId, clientId });
-    res.json({ client, team, sections });
+    res.json({ client, team, sections, alerts: sharedAlerts(db, clientId) });
   });
 
   r.post('/clients', requireCap('clients.edit_basic'), (req, res) => {

@@ -140,6 +140,81 @@ CREATE TABLE IF NOT EXISTS observations (
   at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Trials a QSP writes for a program. Retired trials stay for history.
+CREATE TABLE IF NOT EXISTS program_trials (
+  id INTEGER PRIMARY KEY,
+  program_id INTEGER NOT NULL REFERENCES programs(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL,
+  sort INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Each trial a technician ran, in order, within one session's data point.
+CREATE TABLE IF NOT EXISTS trial_results (
+  id INTEGER PRIMARY KEY,
+  program_data_id INTEGER NOT NULL REFERENCES program_data(id) ON DELETE CASCADE,
+  trial_id INTEGER NOT NULL REFERENCES program_trials(id),
+  result TEXT NOT NULL,                -- correct | prompted | incorrect | no_response
+  seq INTEGER NOT NULL,
+  note TEXT
+);
+
+-- Client profile: one row per section (see PROFILE_SECTIONS).
+CREATE TABLE IF NOT EXISTS client_profile (
+  client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  section TEXT NOT NULL,
+  body TEXT NOT NULL,
+  updated_by INTEGER REFERENCES users(id),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (client_id, section)
+);
+
+CREATE TABLE IF NOT EXISTS profile_changes (
+  id INTEGER PRIMARY KEY,
+  client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  summary TEXT NOT NULL,
+  changed_by INTEGER REFERENCES users(id),
+  at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS reinforcers (
+  id INTEGER PRIMARY KEY,
+  client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL,              -- edible | tangible | activity | social | sensory | other
+  strength TEXT NOT NULL DEFAULT 'medium', -- high | medium | low
+  notes TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  suggestion_id INTEGER REFERENCES suggestions(id),
+  added_by INTEGER REFERENCES users(id),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- "This worked for me": ideas any team member shares about a client.
+CREATE TABLE IF NOT EXISTS suggestions (
+  id INTEGER PRIMARY KEY,
+  client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  author_id INTEGER NOT NULL REFERENCES users(id),
+  kind TEXT NOT NULL,                  -- reinforcer | strategy | trigger | other
+  category TEXT,                       -- reinforcer category when kind = reinforcer
+  title TEXT NOT NULL,
+  details TEXT,
+  status TEXT NOT NULL DEFAULT 'open', -- open | added | not_used
+  reviewer_id INTEGER REFERENCES users(id),
+  review_note TEXT,
+  reviewed_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS suggestion_votes (
+  suggestion_id INTEGER NOT NULL REFERENCES suggestions(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  PRIMARY KEY (suggestion_id, user_id)
+);
+
 -- ---------- Admin ----------
 CREATE TABLE IF NOT EXISTS insurance_policies (
   id INTEGER PRIMARY KEY,
@@ -250,6 +325,9 @@ CREATE INDEX IF NOT EXISTS idx_notes_client ON session_notes(client_id, session_
 CREATE INDEX IF NOT EXISTS idx_notes_status ON session_notes(status);
 CREATE INDEX IF NOT EXISTS idx_obs_client ON observations(client_id, at);
 CREATE INDEX IF NOT EXISTS idx_data_program ON program_data(program_id, session_date);
+CREATE INDEX IF NOT EXISTS idx_trials_program ON program_trials(program_id);
+CREATE INDEX IF NOT EXISTS idx_results_data ON trial_results(program_data_id);
+CREATE INDEX IF NOT EXISTS idx_suggestions_client ON suggestions(client_id, status);
 CREATE INDEX IF NOT EXISTS idx_rides_date ON rides(ride_date);
 CREATE INDEX IF NOT EXISTS idx_audit_at ON audit_log(at);
 `;

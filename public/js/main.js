@@ -231,6 +231,16 @@ async function dashboardView(el) {
         h('div', { class: 'meta' }, a.alert_reasons.join(' · ')))) : empty('All authorizations look fine.')));
   }
 
+  if (d.ideasToReview) {
+    cards.push(h('div', { class: 'card' },
+      h('div', { class: 'card-head' }, h('h2', {}, 'Team ideas to review')),
+      d.ideasToReview.length ? d.ideasToReview.slice(0, 6).map((s) => h('div', { class: 'list-item' },
+        h('div', { class: 'row' }, h('a', { href: `#/clients/${s.client_id}/profile` }, s.client_name), h('span', { class: 'muted small' }, s.kind), h('span', { class: 'spacer' }),
+          s.votes > 0 && h('span', { class: 'badge ok' }, `+${s.votes}`)),
+        h('div', { class: 'small' }, s.title),
+        h('div', { class: 'meta' }, `${s.author_name} · ${ago(s.created_at)}`))) : empty('No new ideas from the team.')));
+  }
+
   if (d.myRidesToday) {
     cards.push(h('div', { class: 'card' },
       h('div', { class: 'card-head' }, h('h2', {}, 'My rides today'), h('a', { href: '#/transport' }, 'Open')),

@@ -280,6 +280,100 @@ describe('programs', () => {
   });
 });
 
+describe('trials', () => {
+  test('every trial needs a description, and changes to trials are logged', async () => {
+    const bad = await patch('qsp', '/programs/1', { trials: [{ name: 'Juice' }] });
+    assert.equal(bad.status, 400);
+    const { data } = await get('qsp', '/programs/1');
+    const trials = data.trials.filter((t) => t.active).map((t) => ({ id: t.id, name: t.name, description: t.description }));
+    trials.push({ name: 'Ball', description: 'Hold the ball up. Wait 3 seconds for "ball".' });
+    const r = await patch('qsp', '/programs/1', { trials: trials.filter((t) => t.name !== 'iPad'), reason: 'iPad is satiated' });
+    assert.equal(r.data.changed, true);
+    const after = await get('tech', '/programs/1');
+    assert.match(after.data.changes[0].summary, /added trial "Ball"/);
+    assert.match(after.data.changes[0].summary, /retired trial "iPad"/);
+    assert.equal(after.data.trials.find((t) => t.name === 'iPad').active, 0, 'retired trials are kept for history');
+    assert.equal((await patch('tech', '/programs/1', { trials: [] })).status, 403);
+  });
+
+  test('a technician saves a whole session trial by trial', async () => {
+    const programs = (await get('tech', '/clients/1/programs')).data;
+    const mand = programs.find((p) => p.name.startsWith('Manding'));
+    const elope = programs.find((p) => p.name === 'Elopement');
+    const [a, b] = mand.trials;
+    const r = await post('tech', '/clients/1/session-data', { session_date: today(), entries: [
+      { program_id: mand.id, trials: [
+        { trial_id: a.id, result: 'correct' }, { trial_id: a.id, result: 'prompted', note: 'needed a gesture' },
+        { trial_id: b.id, result: 'correct' }, { trial_id: b.id, result: 'incorrect' },
+      ] },
+      { program_id: elope.id, value: 1 },
+    ] });
+    assert.equal(r.status, 201);
+    assert.equal(r.data.saved[0].value, 50);
+    const detail = await get('tech', `/programs/${mand.id}`);
+    const last = detail.data.data.find((d) => d.id === r.data.saved[0].id);
+    assert.deepEqual(last.trials.map((t) => t.result), ['correct', 'prompted', 'correct', 'incorrect']);
+    assert.equal(last.trials[1].note, 'needed a gesture');
+    // Retired trials and other clients' programs are rejected
+    const retired = detail.data.trials.find((t) => !t.active);
+    assert.equal((await post('tech', '/clients/1/session-data', { session_date: today(), entries: [
+      { program_id: mand.id, trials: [{ trial_id: retired.id, result: 'correct' }] }] })).status, 400);
+    const noah = (await get('qsp', '/clients/3/programs')).data[0];
+    assert.equal((await post('tech', '/clients/1/session-data', { session_date: today(), entries: [{ program_id: noah.id, value: 1 }] })).status, 400);
+  });
+});
+
+describe('client profile', () => {
+  test('the whole team reads the profile; admin staff do not', async () => {
+    for (const who of ['tech', 'lead', 'qsp']) assert.equal((await get(who, '/clients/1/profile')).status, 200, who);
+    for (const who of ['billing', 'frontdesk', 'driver']) assert.equal((await get(who, '/clients/1/profile')).status, 403, who);
+    assert.equal((await get('tech2', '/clients/1/profile')).status, 403, 'not on the team');
+  });
+
+  test('safety alerts reach drivers and the front desk', async () => {
+    const rides = (await get('driver', `/rides?date=${today()}`)).data;
+    assert.ok(rides.find((r) => r.client_id === 1).alerts.includes('Peanut allergy'));
+    const c = await get('frontdesk', '/clients/1');
+    assert.match(c.data.alerts, /EpiPen/);
+    const p = await get('frontdesk', '/clients/1/programs');
+    assert.equal(p.status, 403, 'but nothing else clinical');
+  });
+
+  test('technicians share ideas; leads add them to the profile with credit', async () => {
+    assert.equal((await call('tech', 'PUT', '/clients/1/profile/about', { body: 'x' })).status, 403);
+    const s = await post('tech', '/clients/1/suggestions', { kind: 'reinforcer', category: 'tangible', title: 'Squishy frog', details: 'Worked during table time' });
+    assert.equal(s.status, 201);
+    assert.equal((await post('tech', `/suggestions/${s.data.id}/vote`)).status, 400, 'no voting for your own idea');
+    assert.equal((await post('lead', `/suggestions/${s.data.id}/vote`)).data.voted, true);
+    assert.equal((await post('tech', `/suggestions/${s.data.id}/review`, { action: 'add' })).status, 403);
+    assert.equal((await post('lead', `/suggestions/${s.data.id}/review`, { action: 'add', strength: 'high' })).status, 200);
+    const prof = (await get('tech', '/clients/1/profile')).data;
+    const frog = prof.reinforcers.find((r) => r.name === 'Squishy frog');
+    assert.equal(frog.strength, 'high');
+    assert.equal(frog.suggested_by_name, 'Sam Nguyen');
+    assert.match(prof.changes[0].summary, /Sam Nguyen's idea/);
+
+    const tip = await post('tech', '/clients/1/suggestions', { kind: 'strategy', title: 'Sing the clean-up song' });
+    await post('qsp', `/suggestions/${tip.data.id}/review`, { action: 'add' });
+    const calming = (await get('tech', '/clients/1/profile')).data.sections.find((x) => x.key === 'calming');
+    assert.match(calming.body, /Sing the clean-up song \(from Sam Nguyen\)/);
+
+    const no = await post('tech', '/clients/1/suggestions', { kind: 'other', title: 'Skip snack' });
+    assert.equal((await post('qsp', `/suggestions/${no.data.id}/review`, { action: 'not_used' })).status, 400, 'needs a reason');
+    assert.equal((await post('qsp', `/suggestions/${no.data.id}/review`, { action: 'not_used', note: 'Snack is in the BIP' })).status, 200);
+  });
+
+  test('leads edit sections and mark reinforcers that stopped working', async () => {
+    assert.equal((await call('lead', 'PUT', '/clients/1/profile/sensory', { body: 'Likes the swing' })).status, 200);
+    const r = (await get('lead', '/clients/1/profile')).data.reinforcers.find((x) => x.name === 'Fruit snacks');
+    assert.equal((await patch('lead', `/reinforcers/${r.id}`, { active: false })).status, 200);
+    const after = (await get('tech', '/clients/1/profile')).data;
+    assert.equal(after.reinforcers.find((x) => x.id === r.id).active, 0);
+    assert.match(after.changes[0].summary, /no longer working/);
+    assert.equal(after.sections.find((x) => x.key === 'sensory').updated_by_name, 'Dana Ortiz');
+  });
+});
+
 describe('audit trail', () => {
   test('client record views are logged and only leadership can read the log', async () => {
     await get('qsp', '/clients/2');

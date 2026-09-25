@@ -23,6 +23,9 @@ The whole policy is one table in [`src/permissions.js`](src/permissions.js), and
 | Waiting on Motivity for updates and customizations | QSPs build their own **session note templates** (fields, dropdowns, required items) and **programs** (targets, measurement type, mastery criteria). Dropdown lists (categories, service codes, payers) can be edited in Settings. None of this needs a vendor. |
 | "Different people say different things" | **Announcements** are the official word. They go to a department or to specific roles, and each person clicks "I have read this." Supervisors see who hasn't read it yet. Every **program change** is logged with who changed it and why, so everyone works from the same version. |
 | Observations about clients end up scattered | Each client has one **client log**. Everyone on the care team adds to it and reads from it, filtered by category and flagged *info / concern / urgent*. Concerns from the past week appear on the dashboard. |
+| Trial data | QSPs write **trials** for each program, and every trial needs a description (what to present, what counts as correct), so anyone running it does it the same way. Techs open **Collect data** on a client and tap *Correct / Prompted / Incorrect / No response* each time they run a trial, for all of that client's programs, then save once. The graph, mastery check and a trial-by-trial breakdown are calculated from those taps. Retired trials stay in the history. |
+| Knowing how to work with a client | Each client has a **profile** that opens first: reinforcers ranked by strength (and ones that stopped working), how the client communicates, how to reinforce them, triggers, what calms them, sensory needs, family notes. Every change is logged with who made it. |
+| Knowledge stuck with one person | Any tech on the team can **share what works** (a reinforcer, a calming strategy, a trigger). Others can tap "Worked for me too", and a lead or QSP adds it to the profile with the tech's name on it, or says why not. **Safety & medical alerts** are also shown to drivers and the front desk. |
 | No way to report things higher up | **Report up** sends a concern to a level (for example "QSP and above" or "Office Manager"), and it is tracked until someone resolves it: acknowledged, replied to, sent higher, resolved. Urgent client observations go to the QSP automatically. Within your own department, reports can only go up. |
 | Morning insurance checks on paper | **Eligibility checklist**: each morning shows which policies are due (never checked, past their check interval, or last result not "active"). Log each check in one click; the result and who checked it are visible to everyone who needs it. |
 | Authorizations tracked in Excel | Units used are calculated from **approved session notes**. The dashboard flags authorizations that expire within 30 days, are 80% or more used, or are over their limit. QSPs see remaining units, but not member IDs, so they can plan hours. |
@@ -33,11 +36,11 @@ The whole policy is one table in [`src/permissions.js`](src/permissions.js), and
 
 | Role | Department | Rank | Sees |
 |---|---|---|---|
-| Behavior Technician | Clinical | 1 | Only clients on their care team: log, programs, data, their own notes |
-| Senior Technician / Lead | Clinical | 2 | Same as technicians, plus can post announcements to clinical |
+| Behavior Technician | Clinical | 1 | Only clients on their care team: profile, log, programs, trial data, their own notes. Can share ideas for the profile |
+| Senior Technician / Lead | Clinical | 2 | Same as technicians, plus edits client profiles, reviews team ideas, posts announcements to clinical |
 | QSP | Clinical | 3 | All clinical records, approves notes, builds programs and templates, sees authorization units remaining |
 | Clinical Director | Clinical | 4 | Same as QSP |
-| Driver | Admin | 1 | Only their own rides (client name, addresses, guardian phone) |
+| Driver | Admin | 1 | Only their own rides (client name, addresses, guardian phone, safety & medical alerts) |
 | Admin Staff | Admin | 1 | Client roster, insurance and eligibility checks, transportation |
 | Scheduling / Transport Coordinator | Admin | 2 | Roster, transportation, authorization units remaining |
 | Insurance & Billing Specialist | Admin | 2 | Roster, insurance, authorizations, billing queue |

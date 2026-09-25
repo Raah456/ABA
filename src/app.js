@@ -35,6 +35,7 @@ function createApp(db) {
   app.use('/api', require('./routes/clinical')(db));
   app.use('/api', require('./routes/admin')(db));
   app.use('/api', require('./routes/comms')(db));
+  app.use('/api', require('./routes/profile')(db));
 
   app.use('/api', (req, res) => res.status(404).json({ error: 'Not found.' }));
   app.use(express.static(path.join(__dirname, '..', 'public'), { index: 'index.html' }));

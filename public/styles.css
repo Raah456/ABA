@@ -61,6 +61,7 @@ p { margin: 0 0 10px; }
 
 /* ---------- layout ---------- */
 .shell { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+.shell > * { min-width: 0; }
 .sidebar {
   background: var(--panel); border-right: 1px solid var(--border);
   padding: 18px 12px; position: sticky; top: 0; height: 100vh; overflow-y: auto;
@@ -227,3 +228,51 @@ a.chip:hover { border-color: var(--accent); text-decoration: none; }
 .login .card { width: min(400px, 100%); padding: 28px; }
 .demo-accounts { font-size: 0.8rem; margin-top: 14px; }
 .demo-accounts button { background: none; border: 0; color: var(--accent); cursor: pointer; padding: 1px 0; font: inherit; }
+
+/* ---------- trials & data collection ---------- */
+.result { display: inline-grid; place-items: center; min-width: 26px; height: 24px; padding: 0 5px; border-radius: 6px; font-size: 0.78rem;
+  font-weight: 700; background: var(--panel-2); color: var(--muted); border: 1px solid transparent; font-variant-numeric: tabular-nums; }
+.result.ok { background: var(--ok-soft); color: var(--ok); }
+.result.warn { background: var(--warn-soft); color: var(--warn); }
+.result.bad { background: var(--bad-soft); color: var(--bad); }
+button.result { cursor: pointer; font: inherit; font-size: 0.78rem; font-weight: 700; }
+button.result:hover { border-color: currentColor; }
+.breakdown { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 4px; }
+.breakdown-item { display: inline-flex; gap: 3px; align-items: center; }
+.breakdown-item > .small { margin-right: 3px; color: var(--muted); }
+.trial-list { margin: 0; padding-left: 20px; display: grid; gap: 10px; }
+.trial-edit { border: 1px solid var(--border); border-radius: 8px; padding: 8px; margin-bottom: 8px; background: var(--panel-2); display: grid; gap: 6px; }
+.trial-edit textarea { min-height: 54px; }
+.label-text { display: block; font-size: 0.82rem; font-weight: 600; margin-bottom: 2px; }
+.trial-run { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; padding: 12px 0; border-top: 1px solid var(--border); align-items: start; }
+.trial-run .tally { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; min-height: 0; }
+.trial-run .tally:empty { display: none; }
+.trial-buttons { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.result-btn { min-height: 38px; font-weight: 600; }
+.result-btn.ok { color: var(--ok); border-color: var(--ok); }
+.result-btn.warn { color: var(--warn); border-color: var(--warn); }
+.result-btn.bad { color: var(--bad); border-color: var(--bad); }
+.run-summary { font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+.session-note { margin-top: 10px; }
+.collect-head .field { margin: 0; min-width: 180px; }
+.save-bar { position: sticky; bottom: 0; display: flex; gap: 10px; align-items: center; background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px)); box-shadow: 0 -4px 16px rgba(20, 30, 50, 0.08); }
+@media (max-width: 700px) {
+  .trial-run { grid-template-columns: 1fr; }
+  .trial-buttons { justify-content: flex-start; }
+  .result-btn { flex: 1 1 40%; justify-content: center; }
+}
+details > summary { cursor: pointer; color: var(--accent); margin: 8px 0; }
+
+/* ---------- client profile ---------- */
+.alert-banner { display: flex; gap: 6px; flex-wrap: wrap; }
+.profile-grid { margin-top: 16px; }
+.profile-section.alert { border-color: var(--bad); background: var(--bad-soft); }
+.profile-section .card-head { margin-bottom: 4px; }
+.profile-section .empty { padding: 4px 0; }
+.strength-group + .strength-group { margin-top: 8px; }
+.strength-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; color: var(--muted); margin-top: 6px; }
+.strength-label.high { color: var(--ok); }
+.seg.seg-wrap { flex-wrap: wrap; }
+.seg.seg-wrap label { border-bottom: 1px solid var(--border); }
+.ride-alert { color: var(--bad); background: var(--bad-soft); border-radius: 6px; padding: 4px 8px; margin: 4px 0; }

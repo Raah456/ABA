@@ -237,6 +237,13 @@ module.exports = function coreRoutes(db) {
       out.myNotes = db.prepare(`SELECT status, COUNT(*) AS n FROM session_notes
         WHERE author_id = ? AND status IN ('draft', 'returned', 'submitted') GROUP BY status`).all(u.id);
     }
+    if (can(u, 'profile.edit')) {
+      out.ideasToReview = db.prepare(`SELECT s.id, s.client_id, s.kind, s.title, s.created_at, a.name AS author_name,
+          c.first_name || ' ' || c.last_name AS client_name,
+          (SELECT COUNT(*) FROM suggestion_votes x WHERE x.suggestion_id = s.id) AS votes
+        FROM suggestions s JOIN users a ON a.id = s.author_id JOIN clients c ON c.id = s.client_id
+        WHERE s.status = 'open' AND ${inClients('s.client_id')} ORDER BY s.created_at LIMIT 20`).all();
+    }
     if (can(u, 'notes.approve')) {
       out.notesToReview = db.prepare(`SELECT COUNT(*) AS n FROM session_notes
         WHERE status = 'submitted' AND author_id != ? AND ${inClients('client_id')}`).get(u.id).n;
