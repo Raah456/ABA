@@ -1,0 +1,18 @@
+{
+  "name": "aba-practice-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ABA practice platform: clinical workspace (programs, data, session notes, client log) + admin workspace (insurance, authorizations, transportation, billing queue) with role-based privacy and structured communication.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/server.js",
+    "seed": "node --disable-warning=ExperimentalWarning src/seed.js",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}
