@@ -7,12 +7,17 @@
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/server.js",
     "seed": "node --disable-warning=ExperimentalWarning src/seed.js",
-    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js",
+    "build:demo": "node tools/demo/build.mjs"
   },
   "engines": {
     "node": ">=22.5"
   },
   "dependencies": {
     "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "sql.js": "^1.10.3"
   }
 }

@@ -70,6 +70,15 @@ To start with a blank database, skip the seed step and create the first executiv
 ADMIN_EMAIL=you@yourpractice.com ADMIN_PASSWORD='a-long-password' npm start
 ```
 
+### Offline demo page
+
+```bash
+npm run build:demo      # writes dist/demo.html
+```
+
+`dist/demo.html` is the whole app in one file, with demo data and no server needed. Open it in any browser.
+Changes made in it stay in that browser only.
+
 ## Built-in security
 
 - Passwords are hashed with scrypt. Sessions use HttpOnly, SameSite=Strict cookies, and sign-in is rate-limited.
